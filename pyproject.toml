@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "anno-sql-test"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+excel = [
+    "openpyxl>=3.1.5",
+]
+
+[dependency-groups]
+dev = [
+    "pyspark>=3.0.0",
+    "pytest>=8.3.5",
+    "ruff>=0.15.14",
+    "ty>=0.0.40",
+]
+
+[project.scripts]
+anno-sql-test = "anno_sql_test.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/anno_sql_test"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+ignore = [
+    "S101",   # use assert
+    "N812",   # Lowercase imported as non-lowercase
+    "ARG002", # unused argument
+]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # Pyflakes
+    "N",    # PEP8 naming
+    "B",    # flake8-bugbear
+    "I",    # isort
+    "C",    # mccabe
+    "UP",   # pyupgrade
+    "S",    # flake8-bandit
+    "A",    # flake8-builtins
+    "COM",  # flake8-commas
+    "ARG",  # flake8-unused-arguments
+    "PTH",  # pathlib
+    "W292", # no newline at end of file
+]
