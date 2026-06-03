@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - run: uv sync --group dev
+      - run: uv sync --group dev --all-extras
 
       - name: Type check
         run: uv run ty check
