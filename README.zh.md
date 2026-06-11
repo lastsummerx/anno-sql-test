@@ -96,6 +96,8 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | `@non_test` | — | 标记一个非测试 SQL 块（setup / teardown，不含断言） |
 | `@dependency` | `<name1>[, <name2>]` | 声明依赖同一文件中的其他测试 |
 | `@assert_all` | `<predicate>` | 所有行必须满足该谓词条件 |
+| `@assert_any` | `<predicate>` | 至少有一行满足该谓词条件 |
+| `@assert_none` | `<predicate>` | 没有行满足该谓词条件 |
 | `@assert_empty` | — | DataFrame 必须为空 |
 | `@assert_not_empty` | — | DataFrame 必须非空 |
 | `@assert_unique` | `<field1>[, <field2>]` | 指定列组合必须唯一 |
@@ -141,7 +143,7 @@ src/anno_sql_test/
 
 ### 断言类型
 
-- **单 DataFrame 断言**：谓词检查、空/非空、唯一性
+- **单 DataFrame 断言**：谓词检查（全部/任意/无）、空/非空、唯一性
 - **多 DataFrame 聚合断言**：对多个查询结果的聚合值进行比较（支持 `*` 通配）
 - **双 DataFrame 连接断言**：按 key 连接后比较值列（精确 / 比例 / 绝对值 / 时间）
 

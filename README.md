@@ -96,6 +96,8 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | `@non_test` | — | Start a non-test SQL block (setup / teardown, no assertions) |
 | `@dependency` | `<name1>[, <name2>]` | Declare dependency on other tests in the same file |
 | `@assert_all` | `<predicate>` | All rows must satisfy the predicate |
+| `@assert_any` | `<predicate>` | At least one row must satisfy the predicate |
+| `@assert_none` | `<predicate>` | No row must satisfy the predicate |
 | `@assert_empty` | — | DataFrame must be empty |
 | `@assert_not_empty` | — | DataFrame must be non-empty |
 | `@assert_unique` | `<field1>[, <field2>]` | Column combination must be unique |
@@ -141,7 +143,7 @@ src/anno_sql_test/
 
 ### Assertion Types
 
-- **Single-DataFrame**: predicate check, empty/non-empty, uniqueness
+- **Single-DataFrame**: predicate check (all/any/none), empty/non-empty, uniqueness
 - **Multi-DataFrame Aggregation**: compare aggregated values across multiple queries (supports `*` wildcard)
 - **Dual-DataFrame Join**: join by keys and compare value columns (exact / ratio / delta / temporal)
 

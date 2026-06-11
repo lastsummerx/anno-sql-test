@@ -3,7 +3,9 @@ from pyspark.sql import SparkSession
 from anno_sql_test.evaluators.spark import SparkAssertionEvaluator
 from anno_sql_test.models import (
     SingleAssertAll,
+    SingleAssertAny,
     SingleAssertEmpty,
+    SingleAssertNone,
     SingleAssertNotEmpty,
     SingleAssertUnique,
 )
@@ -73,6 +75,54 @@ def test_assert_unique_composite_pass():
 def test_assert_unique_composite_fail():
     df = spark.createDataFrame([(1, "x"), (1, "x"), (2, "y")], ["a", "b"])
     result = evaluator.evaluate(SingleAssertUnique(fields=["a", "b"]), [df])
+    assert result.passed is False
+
+
+def test_assert_any_pass():
+    df = spark.createDataFrame([(1,), (2,), (3,)], ["a"])
+    result = evaluator.evaluate(SingleAssertAny(predicate="a > 2"), [df])
+    assert result.passed is True
+
+
+def test_assert_any_fail():
+    df = spark.createDataFrame([(1,), (2,), (3,)], ["a"])
+    result = evaluator.evaluate(SingleAssertAny(predicate="a > 10"), [df])
+    assert result.passed is False
+
+
+def test_assert_any_empty_df_fail():
+    df = spark.createDataFrame([], schema="a: int")
+    result = evaluator.evaluate(SingleAssertAny(predicate="a > 0"), [df])
+    assert result.passed is False
+
+
+def test_assert_any_all_rows_match():
+    df = spark.createDataFrame([(1,), (2,), (3,)], ["a"])
+    result = evaluator.evaluate(SingleAssertAny(predicate="a > 0"), [df])
+    assert result.passed is True
+
+
+def test_assert_none_pass():
+    df = spark.createDataFrame([(1,), (2,), (3,)], ["a"])
+    result = evaluator.evaluate(SingleAssertNone(predicate="a > 10"), [df])
+    assert result.passed is True
+
+
+def test_assert_none_fail():
+    df = spark.createDataFrame([(1,), (2,), (3,)], ["a"])
+    result = evaluator.evaluate(SingleAssertNone(predicate="a > 2"), [df])
+    assert result.passed is False
+
+
+def test_assert_none_empty_df_pass():
+    df = spark.createDataFrame([], schema="a: int")
+    result = evaluator.evaluate(SingleAssertNone(predicate="a > 0"), [df])
+    assert result.passed is True
+
+
+def test_assert_none_all_rows_match_fail():
+    df = spark.createDataFrame([(1,), (2,), (3,)], ["a"])
+    result = evaluator.evaluate(SingleAssertNone(predicate="a > 0"), [df])
     assert result.passed is False
 
 

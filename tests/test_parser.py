@@ -15,7 +15,9 @@ from anno_sql_test.models import (
     MultiAggAssertNumericRatioApprox,
     MultiAggAssertTemporalApprox,
     SingleAssertAll,
+    SingleAssertAny,
     SingleAssertEmpty,
+    SingleAssertNone,
     SingleAssertNotEmpty,
     SingleAssertUnique,
 )
@@ -393,6 +395,24 @@ def test_parse_duplicate_name(tmp_path: Path):
     p.write_text("-- @TEST t\nselect 1;\n-- @TEST t\nselect 2;")
     with pytest.raises(ParseError, match="Duplicate"):
         parse_file(p)
+
+
+def test_parse_assert_any(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_any a > 0\nselect 1;")
+    suite = parse_file(p)
+    a = cast(SingleAssertAny, suite.cases[0].assertions[0])
+    assert isinstance(a, SingleAssertAny)
+    assert a.predicate == "a > 0"
+
+
+def test_parse_assert_none(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_none a is null\nselect 1;")
+    suite = parse_file(p)
+    a = cast(SingleAssertNone, suite.cases[0].assertions[0])
+    assert isinstance(a, SingleAssertNone)
+    assert a.predicate == "a is null"
 
 
 def test_parse_dependency_not_found(tmp_path: Path):

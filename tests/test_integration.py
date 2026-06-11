@@ -39,6 +39,14 @@ SELECT 1 AS a, 2 AS b;
 -- @dependency test_predicate
 -- @assert_all a > 0
 SELECT 1 AS a;
+
+-- @TEST test_any_pass
+-- @assert_any a > 0
+SELECT 1 AS a;
+
+-- @TEST test_none_pass
+-- @assert_none a > 10
+SELECT 1 AS a;
 """
 
 
@@ -52,11 +60,11 @@ def test_integration_full_pipeline(tmp_path: Path):
     suites = parse_suite(files)
     assert len(suites) == 1
     suite = suites[0]
-    assert len(suite.cases) == 6
+    assert len(suite.cases) == 8
 
     runner = SparkRunner(spark)
     result = runner.run(suite)
-    assert len(result.results) == 6
+    assert len(result.results) == 8
 
     assert result.results[0].passed is True
     assert result.results[1].passed is True
@@ -65,6 +73,8 @@ def test_integration_full_pipeline(tmp_path: Path):
     assert result.results[4].passed is True
     assert result.results[5].passed is True
     assert result.results[5].skipped is False
+    assert result.results[6].passed is True
+    assert result.results[7].passed is True
 
     ec = ConsoleReporter().report(result)
     assert ec == 0

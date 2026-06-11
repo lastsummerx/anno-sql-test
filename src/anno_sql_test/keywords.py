@@ -12,7 +12,9 @@ from anno_sql_test.models import (
     MultiAggAssertNumericRatioApprox,
     MultiAggAssertTemporalApprox,
     SingleAssertAll,
+    SingleAssertAny,
     SingleAssertEmpty,
+    SingleAssertNone,
     SingleAssertNotEmpty,
     SingleAssertUnique,
 )
@@ -34,6 +36,16 @@ class AssertKeyword(ABC):
 class SingleAssertAllKeyword(AssertKeyword):
     def build(self, rest: str, line: str) -> Assertion:
         return SingleAssertAll(predicate=rest)
+
+
+class SingleAssertAnyKeyword(AssertKeyword):
+    def build(self, rest: str, line: str) -> Assertion:
+        return SingleAssertAny(predicate=rest)
+
+
+class SingleAssertNoneKeyword(AssertKeyword):
+    def build(self, rest: str, line: str) -> Assertion:
+        return SingleAssertNone(predicate=rest)
 
 
 class SingleAssertEmptyKeyword(AssertKeyword):
@@ -141,6 +153,8 @@ class DependencyKeyword:
 
 _KEYWORD_MAP: dict[str, AssertKeyword | DependencyKeyword] = {
     "assert_all": SingleAssertAllKeyword(),
+    "assert_any": SingleAssertAnyKeyword(),
+    "assert_none": SingleAssertNoneKeyword(),
     "assert_empty": SingleAssertEmptyKeyword(),
     "assert_not_empty": SingleAssertNotEmptyKeyword(),
     "assert_unique": SingleAssertUniqueKeyword(),

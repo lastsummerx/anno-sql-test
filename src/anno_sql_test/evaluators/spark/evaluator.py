@@ -26,8 +26,10 @@ from anno_sql_test.evaluators.spark._multi_agg import (
     MultiAggFusedAssertionEvaluator,
 )
 from anno_sql_test.evaluators.spark._single import (
+    SingleAssertAnyEvaluator,
     SingleAssertEmptyEvaluator,
     SingleAssertEvaluator,
+    SingleAssertNoneEvaluator,
     SingleAssertNotEmptyEvaluator,
     SingleAssertUniqueEvaluator,
     SinglePredicateFusedAssertionEvaluator,
@@ -45,7 +47,9 @@ from anno_sql_test.models import (
     MultiAggAssertNumericRatioApprox,
     MultiAggAssertTemporalApprox,
     SingleAssertAll,
+    SingleAssertAny,
     SingleAssertEmpty,
+    SingleAssertNone,
     SingleAssertNotEmpty,
     SingleAssertUnique,
 )
@@ -55,6 +59,8 @@ class SparkAssertionEvaluator(BaseSparkEvaluator[Assertion]):
     def __init__(self):
         _handlers = [
             (SingleAssertAll, SingleAssertEvaluator()),
+            (SingleAssertAny, SingleAssertAnyEvaluator()),
+            (SingleAssertNone, SingleAssertNoneEvaluator()),
             (SingleAssertEmpty, SingleAssertEmptyEvaluator()),
             (SingleAssertNotEmpty, SingleAssertNotEmptyEvaluator()),
             (SingleAssertUnique, SingleAssertUniqueEvaluator()),

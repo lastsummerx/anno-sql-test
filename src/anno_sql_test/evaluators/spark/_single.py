@@ -21,7 +21,10 @@ from anno_sql_test.models import (
     AssertionResult,
     FusedAssertion,
     SingleAssertAll,
+    SingleAssertAny,
     SingleAssertEmpty,
+    SingleAssertion,
+    SingleAssertNone,
     SingleAssertNotEmpty,
     SingleAssertUnique,
 )
@@ -34,10 +37,7 @@ class SingleAssertContext:
     namespace: str = ""
 
 
-type BaseSingleAssrtion = SingleAssertAll | SingleAssertEmpty | SingleAssertNotEmpty
-
-
-class BaseSingleDataFrameEvaluator[T: Assertion](
+class BaseSingleDataFrameEvaluator[T: SingleAssertion](
     BaseStepwiseSparkEvaluator[T, SingleAssertContext, list[NamedColumn]],
 ):
     """处理单 DataFrame 断言的基础评估器"""
@@ -118,6 +118,49 @@ class SingleAssertNotEmptyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertNot
         return [AssertionResult(assertion=assertion, passed=False, message="DataFrame is empty")]
 
 
+class SingleAssertAnyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertAny]):
+    def build(self, assertion: SingleAssertAny, prepared: SingleAssertContext) -> list[NamedColumn]:
+        name = self._column_prefix(prepared.namespace) + _to_literal_name(assertion.predicate)
+        return [
+            NamedColumn(name=name, column=F.count(F.when(F.expr(assertion.predicate), 1)).alias(name)),
+        ]
+
+    def finalize(
+        self, assertion: SingleAssertAny, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
+    ) -> list[AssertionResult]:
+        exec_result = step_result.executed
+        matched = exec_result[step_result.plan[0].name]
+        if matched > 0:
+            return [AssertionResult(assertion=assertion, passed=True)]
+        total = exec_result[self.TOTAL_COL]
+        return [AssertionResult(
+            assertion=assertion, passed=False,
+            message=f"Expected at least 1 row matching: {assertion.predicate}, but got 0 (total {total} row(s))",
+        )]
+
+
+class SingleAssertNoneEvaluator(BaseSingleDataFrameEvaluator[SingleAssertNone]):
+    def build(self, assertion: SingleAssertNone, prepared: SingleAssertContext) -> list[NamedColumn]:
+        name = self._column_prefix(prepared.namespace) + _to_literal_name(assertion.predicate)
+        return [
+            NamedColumn(name=name, column=F.count(F.when(F.expr(assertion.predicate), 1)).alias(name)),
+        ]
+
+    def finalize(
+        self, assertion: SingleAssertNone, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
+    ) -> list[AssertionResult]:
+        exec_result = step_result.executed
+        matched = exec_result[step_result.plan[0].name]
+        if matched == 0:
+            return [AssertionResult(assertion=assertion, passed=True)]
+        total = exec_result[self.TOTAL_COL]
+        pct = matched / total * 100
+        return [AssertionResult(
+            assertion=assertion, passed=False,
+            message=f"Found {matched} row(s) ({pct:.1f}%) matching: {assertion.predicate}, expected 0",
+        )]
+
+
 class SingleAssertUniqueEvaluator(
     BaseStepwiseSparkEvaluator[SingleAssertUnique, DataFrame, list[Column]],
 ):
@@ -169,23 +212,25 @@ class SingleAssertUniqueEvaluator(
 
 
 class SinglePredicateFusedAssertionEvaluator(
-    DelegatingStepwiseSparkFusedEvaluator[BaseSingleAssrtion, SingleAssertContext, list[NamedColumn]],
+    DelegatingStepwiseSparkFusedEvaluator[SingleAssertion, SingleAssertContext, list[NamedColumn]],
 ):
     def __init__(self) -> None:
-        self._assertion_evaluators: dict[type[BaseSingleAssrtion], BaseSingleDataFrameEvaluator[Any]] = {
+        self._assertion_evaluators: dict[type[SingleAssertion], BaseSingleDataFrameEvaluator[Any]] = {
             SingleAssertAll: SingleAssertEvaluator(),
+            SingleAssertAny: SingleAssertAnyEvaluator(),
+            SingleAssertNone: SingleAssertNoneEvaluator(),
             SingleAssertEmpty: SingleAssertEmptyEvaluator(),
             SingleAssertNotEmpty: SingleAssertNotEmptyEvaluator(),
         }
 
     def get_evaluator_map(self) -> Mapping[
-        type[BaseSingleAssrtion],
-        BaseStepwiseAssertionEvaluator[BaseSingleAssrtion, DataFrame, SingleAssertContext, list[NamedColumn], Row],
+        type[SingleAssertion],
+        BaseStepwiseAssertionEvaluator[SingleAssertion, DataFrame, SingleAssertContext, list[NamedColumn], Row],
     ]:
         return self._assertion_evaluators
 
     def prepare(
-        self, assertion: FusedAssertion[BaseSingleAssrtion], dataframes: list[DataFrame],
+        self, assertion: FusedAssertion[SingleAssertion], dataframes: list[DataFrame],
     ) -> list[SingleAssertContext]:
         prepared = BaseSingleDataFrameEvaluator.prepare_shared(dataframes)
         return [

@@ -9,6 +9,11 @@ class Assertion:
 
 
 @dataclass
+class SingleAssertion(Assertion):
+    pass
+
+
+@dataclass
 class DualJoinAssertion(Assertion):
     keys: list[str]
     values: list[str]
@@ -21,17 +26,27 @@ class MultiAggAssertion(Assertion):
 
 
 @dataclass
-class SingleAssertAll(Assertion):
+class SingleAssertAll(SingleAssertion):
     predicate: str
 
 
 @dataclass
-class SingleAssertEmpty(Assertion):
+class SingleAssertAny(SingleAssertion):
+    predicate: str
+
+
+@dataclass
+class SingleAssertNone(SingleAssertion):
+    predicate: str
+
+
+@dataclass
+class SingleAssertEmpty(SingleAssertion):
     pass
 
 
 @dataclass
-class SingleAssertNotEmpty(Assertion):
+class SingleAssertNotEmpty(SingleAssertion):
     pass
 
 
