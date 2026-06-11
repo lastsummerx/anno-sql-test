@@ -2,8 +2,11 @@ from abc import ABC, abstractmethod
 
 from pyspark.sql import DataFrame
 
-from anno_sql_test.evaluators.base import BaseAssertionEvaluator
-from anno_sql_test.evaluators.spark import SparkAssertionEvaluator
+from anno_sql_test.evaluators.optimizer import group_as_fused
+from anno_sql_test.evaluators.spark import (
+    SparkAssertionEvaluator,
+    SparkFusedAssertionEvaluator,
+)
 from anno_sql_test.models import (
     Assertion,
     AssertionResult,
@@ -22,9 +25,9 @@ class BaseRunner(ABC):
 
 
 class SparkRunner(BaseRunner):
-    def __init__(self, spark, evaluator: BaseAssertionEvaluator | None = None):
+    def __init__(self, spark, evaluator: SparkAssertionEvaluator | None = None):
         self._spark = spark
-        self._evaluator = evaluator or SparkAssertionEvaluator()
+        self._evaluator = evaluator or SparkFusedAssertionEvaluator()
 
     def run(self, suite: SqlTestSuite) -> SqlTestSuiteResult:
         name_to_result: dict = {}
@@ -88,6 +91,17 @@ class SparkRunner(BaseRunner):
 
     def _evaluate_assertions(self, case: SqlTestCase, dataframes: list[DataFrame]) -> list[AssertionResult]:
         """Evaluate all assertions of a test case. Returns (assertion_results, all_passed)."""
+        if isinstance(self._evaluator, SparkFusedAssertionEvaluator):
+            fused_assertions = group_as_fused(case.assertions)
+            result = []
+            for fused in fused_assertions:
+                try:
+                    result.extend(self._evaluator.evaluate(fused, dataframes))
+                except Exception as e:
+                    for a in fused.assertions:
+                        ar = AssertionResult(assertion=a, passed=False, message=f"Fused evaluation error: {e}")
+                        result.append(ar)
+            return result
         assertion_results = []
 
         for assertion in case.assertions:

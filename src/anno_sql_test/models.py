@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Generic, TypeVar
 
 
 @dataclass
@@ -79,6 +80,17 @@ class DualJoinAssertTemporalApprox(DualJoinAssertion):
     duration_seconds: float
 
 
+T_co = TypeVar('T_co', bound=Assertion, covariant=True)
+
+
+@dataclass
+class FusedAssertion(Generic[T_co]):
+    assertions: list[T_co]
+
+
+type GeneralAssertion = Assertion | FusedAssertion[Assertion]
+
+
 @dataclass
 class SqlTestCase:
     name: str
@@ -94,7 +106,7 @@ class SqlNonTestBlock:
 
 @dataclass
 class AssertionResult:
-    assertion: Assertion
+    assertion: GeneralAssertion
     passed: bool
     message: str = ""
 

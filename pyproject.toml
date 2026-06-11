@@ -39,6 +39,8 @@ ignore = [
     "S101",   # use assert
     "N812",   # Lowercase imported as non-lowercase
     "ARG002", # unused argument
+    "UP046",  # uses Generic subclass
+    "B905",   # `zip()` without an explicit `strict=` parameter
 ]
 select = [
     "E",    # pycodestyle errors

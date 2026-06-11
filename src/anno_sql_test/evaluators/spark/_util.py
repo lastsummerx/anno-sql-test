@@ -1,5 +1,6 @@
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
@@ -17,37 +18,43 @@ try:
 except ImportError:
     pass
 
-_SIMPLE_COL = re.compile(r'^[\w.]+$')
+
+@dataclass
+class NamedColumn:
+    name: str
+    column: Column
+    namespace: str = ""
 
 
-def _is_simple_column(s: str) -> bool:
-    return bool(_SIMPLE_COL.match(s))
+type ColumnComparator = Callable[[Column, Column], Column]
+type ColumnTypeChecker = Callable[[StructType, str], str | None]
 
 
-def _resolve_col(alias: str, v: str):
-    if _is_simple_column(v):
-        return F.col(f"{alias}.`{v}`")
-    return F.expr(f"{alias}.({v})")
+_NON_WORD = re.compile(r"\W")
 
 
-def _prepare_df(df: DataFrame, keys: list[str], values: list[str]):
-    rkeys = []
-    for i, k in enumerate(keys):
-        if _is_simple_column(k):
-            rkeys.append(k)
-        else:
-            df = df.withColumn(f"_key_{i}", F.expr(k))
-            rkeys.append(f"_key_{i}")
+def _resolve_fields(
+    fields: list[str],
+    dataframes: list[DataFrame],
+) -> list[str]:
+    if fields == ["*"]:
+        common = list(set(dataframes[0].columns).intersection(
+            *[set(df.columns) for df in dataframes[1:]],
+        ))
+        return common
+    return fields
 
-    rvals = []
-    for i, v in enumerate(values):
-        if _is_simple_column(v):
-            rvals.append(v)
-        else:
-            df = df.withColumn(f"_val_{i}", F.expr(v))
-            rvals.append(f"_val_{i}")
 
-    return df, rkeys, rvals
+def _to_literal_name(expr: str) -> str:
+    return re.sub(_NON_WORD, '_', expr)
+
+
+def _build_aliased_columns(exprs: list[str], prefix: str) -> list[Column]:
+    resolved = []
+    for expr in exprs:
+        column = F.expr(expr).alias(f"{prefix}{_to_literal_name(expr)}")
+        resolved.append(column)
+    return resolved
 
 
 def _col_type_name(schema: StructType, col_name: str) -> str:
@@ -70,9 +77,3 @@ def _check_temporal(schema: StructType, col_name: str) -> str | None:
             f"got {_col_type_name(schema, col_name)}"
         )
     return None
-
-
-type ColumnComparator = Callable[[Column, Column], Column]
-
-
-type ColumnTypeChecker = Callable[[StructType, str], str | None]
