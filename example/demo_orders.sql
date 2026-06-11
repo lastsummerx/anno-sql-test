@@ -17,7 +17,7 @@ AS t(order_id, user_name, amount, order_date);
 
 
 -- @test order_stats
--- @assert amount > 0
+-- @assert_all amount > 0
 -- @assert_not_empty
 -- @assert_unique order_id
 SELECT order_id, user_name, amount, order_date
@@ -37,7 +37,7 @@ WHERE user_name = 'alice';
 
 
 -- @test compare_users
--- @assert_numeric_ratio_approx 0.01 on user_name values total
+-- @assert_join_numeric_ratio_approx 0.01 on user_name values total
 SELECT user_name, sum(amount) total
 FROM orders
 group by user_name;

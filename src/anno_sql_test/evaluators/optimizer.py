@@ -3,18 +3,18 @@ from anno_sql_test.models import (
     DualJoinAssertion,
     FusedAssertion,
     MultiAggAssertion,
-    SingleAssert,
+    SingleAssertAll,
 )
 
 
 def group_as_fused(assertions: list[Assertion]) -> list[FusedAssertion[Assertion]]:
-    single: list[SingleAssert] = []
+    single: list[SingleAssertAll] = []
     multi: list[MultiAggAssertion] = []
     by_keys: dict[tuple[str, ...], list[DualJoinAssertion]] = {}
     others: list[Assertion] = []
 
     for a in assertions:
-        if isinstance(a, SingleAssert):
+        if isinstance(a, SingleAssertAll):
             single.append(a)
         elif isinstance(a, MultiAggAssertion):
             multi.append(a)

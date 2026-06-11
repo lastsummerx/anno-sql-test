@@ -21,7 +21,7 @@ class MultiAggAssertion(Assertion):
 
 
 @dataclass
-class SingleAssert(Assertion):
+class SingleAssertAll(Assertion):
     predicate: str
 
 

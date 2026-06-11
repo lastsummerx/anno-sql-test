@@ -7,7 +7,7 @@ from anno_sql_test.models import (
     DualJoinAssertEqual,
     FusedAssertion,
     MultiAggAssertEqual,
-    SingleAssert,
+    SingleAssertAll,
     SingleAssertEmpty,
     SingleAssertNotEmpty,
 )
@@ -24,7 +24,7 @@ class TestSparkFusedAssertionEvaluator:
     def test_batch_evaluate_single_predicates(self):
         evaluator = SparkFusedAssertionEvaluator()
         df = spark.createDataFrame([(1,), (2,)], ["a"])
-        fused = FusedAssertion([SingleAssert(predicate="a > 0"), SingleAssert(predicate="a < 10")])
+        fused = FusedAssertion([SingleAssertAll(predicate="a > 0"), SingleAssertAll(predicate="a < 10")])
         results = evaluator.evaluate(fused, [df])
         assert len(results) == 2
         assert all(r.passed for r in results)
@@ -33,7 +33,7 @@ class TestSparkFusedAssertionEvaluator:
         evaluator = SparkFusedAssertionEvaluator()
         df = spark.createDataFrame([(1,)], ["a"])
         fused = FusedAssertion([
-            SingleAssert(predicate="a > 0"),
+            SingleAssertAll(predicate="a > 0"),
             SingleAssertEmpty(),
             SingleAssertNotEmpty(),
         ])

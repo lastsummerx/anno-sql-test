@@ -15,7 +15,7 @@ spark = (SparkSession.builder.master("local[1]")
 
 
 FILE_CONTENT = """-- @TEST test_predicate
--- @assert a > 0
+-- @assert_all a > 0
 SELECT 1 AS a;
 
 -- @TEST test_not_empty
@@ -37,7 +37,7 @@ SELECT 1 AS a, 2 AS b;
 
 -- @TEST test_dependent
 -- @dependency test_predicate
--- @assert a > 0
+-- @assert_all a > 0
 SELECT 1 AS a;
 """
 
@@ -72,7 +72,7 @@ def test_integration_full_pipeline(tmp_path: Path):
 
 def test_integration_failure(tmp_path: Path):
     filepath = tmp_path / "fail.sql"
-    filepath.write_text("-- @TEST fail\n-- @assert a > 10\nSELECT 1 AS a;\n")
+    filepath.write_text("-- @TEST fail\n-- @assert_all a > 10\nSELECT 1 AS a;\n")
 
     suites = parse_suite(discover_sql_files(filepath))
     runner = SparkRunner(spark)

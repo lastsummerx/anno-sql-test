@@ -46,7 +46,7 @@ Create a `.sql` file with annotation comments:
 
 ```sql
 -- @test users_active
--- @assert status = 'ACTIVE'
+-- @assert_all status = 'ACTIVE'
 -- @assert_not_empty
 SELECT id, name, status FROM users WHERE status = 'ACTIVE';
 
@@ -57,7 +57,7 @@ SELECT * FROM users WHERE status = 'ACTIVE';
 
 -- @test compare_revenue
 -- @dependency users_active
--- @assert_numeric_ratio_approx 0.01 on id values amount
+-- @assert_join_numeric_ratio_approx 0.01 on id values amount
 SELECT id, amount FROM orders_2024;
 SELECT id, amount FROM orders_2025;
 ```
@@ -95,7 +95,7 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | `@test` | `<name>` | Start a test case |
 | `@non_test` | — | Start a non-test SQL block (setup / teardown, no assertions) |
 | `@dependency` | `<name1>[, <name2>]` | Declare dependency on other tests in the same file |
-| `@assert` | `<predicate>` | All rows must satisfy the predicate |
+| `@assert_all` | `<predicate>` | All rows must satisfy the predicate |
 | `@assert_empty` | — | DataFrame must be empty |
 | `@assert_not_empty` | — | DataFrame must be non-empty |
 | `@assert_unique` | `<field1>[, <field2>]` | Column combination must be unique |
@@ -103,10 +103,10 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields>` | Aggregation approx: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
 | `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields>` | Aggregation approx: `\|a - b\| <= delta` |
 | `@assert_agg_temporal_approx` | `<agg> <duration> <fields>` | Aggregation approx: `\|a - b\| <= duration_seconds` (ISO 8601) |
-| `@assert_equal` | `on <keys> values <vals>` | Join by keys, compare values exactly |
-| `@assert_numeric_ratio_approx` | `<ratio> on <keys> values <vals>` | Join compare: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
-| `@assert_numeric_delta_approx` | `<delta> on <keys> values <vals>` | Join compare: `\|a - b\| <= delta` |
-| `@assert_temporal_approx` | `<duration> on <keys> values <vals>` | Join compare: `\|a - b\| <= duration_seconds` (ISO 8601) |
+| `@assert_join_equal` | `on <keys> values <vals>` | Join by keys, compare values exactly |
+| `@assert_join_numeric_ratio_approx` | `<ratio> on <keys> values <vals>` | Join compare: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
+| `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | Join compare: `\|a - b\| <= delta` |
+| `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | Join compare: `\|a - b\| <= duration_seconds` (ISO 8601) |
 
 > **Note**: `<fields>` supports `*` to mean all common columns; `<duration>` uses ISO 8601 format (e.g. `P1DT12H`); `<fields>`, `<key>`, and `<value>` all support SQL expressions.
 >

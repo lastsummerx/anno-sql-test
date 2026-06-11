@@ -2,7 +2,7 @@ from pyspark.sql import SparkSession
 
 from anno_sql_test.evaluators.spark import SparkAssertionEvaluator
 from anno_sql_test.models import (
-    SingleAssert,
+    SingleAssertAll,
     SingleAssertEmpty,
     SingleAssertNotEmpty,
     SingleAssertUnique,
@@ -18,13 +18,13 @@ evaluator = SparkAssertionEvaluator()
 
 def test_assert_predicate_pass():
     df = spark.createDataFrame([(1,), (2,)], ["a"])
-    result = evaluator.evaluate(SingleAssert(predicate="a > 0"), [df])
+    result = evaluator.evaluate(SingleAssertAll(predicate="a > 0"), [df])
     assert result.passed is True
 
 
 def test_assert_predicate_fail():
     df = spark.createDataFrame([(1,), (None,)], ["a"])
-    result = evaluator.evaluate(SingleAssert(predicate="a is not null"), [df])
+    result = evaluator.evaluate(SingleAssertAll(predicate="a is not null"), [df])
     assert result.passed is False
 
 

@@ -44,7 +44,7 @@ from anno_sql_test.models import (
     MultiAggAssertNumericDeltaApprox,
     MultiAggAssertNumericRatioApprox,
     MultiAggAssertTemporalApprox,
-    SingleAssert,
+    SingleAssertAll,
     SingleAssertEmpty,
     SingleAssertNotEmpty,
     SingleAssertUnique,
@@ -54,7 +54,7 @@ from anno_sql_test.models import (
 class SparkAssertionEvaluator(BaseSparkEvaluator[Assertion]):
     def __init__(self):
         _handlers = [
-            (SingleAssert, SingleAssertEvaluator()),
+            (SingleAssertAll, SingleAssertEvaluator()),
             (SingleAssertEmpty, SingleAssertEmptyEvaluator()),
             (SingleAssertNotEmpty, SingleAssertNotEmptyEvaluator()),
             (SingleAssertUnique, SingleAssertUniqueEvaluator()),

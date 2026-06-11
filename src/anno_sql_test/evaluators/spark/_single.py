@@ -20,7 +20,7 @@ from anno_sql_test.models import (
     Assertion,
     AssertionResult,
     FusedAssertion,
-    SingleAssert,
+    SingleAssertAll,
     SingleAssertEmpty,
     SingleAssertNotEmpty,
     SingleAssertUnique,
@@ -34,7 +34,7 @@ class SingleAssertContext:
     namespace: str = ""
 
 
-type BaseSingleAssrtion = SingleAssert | SingleAssertEmpty | SingleAssertNotEmpty
+type BaseSingleAssrtion = SingleAssertAll | SingleAssertEmpty | SingleAssertNotEmpty
 
 
 class BaseSingleDataFrameEvaluator[T: Assertion](
@@ -67,15 +67,15 @@ class BaseSingleDataFrameEvaluator[T: Assertion](
         return prepared.dataframe.agg(prepared.total, *(p.column for p in plan)).collect()[0]
 
 
-class SingleAssertEvaluator(BaseSingleDataFrameEvaluator[SingleAssert]):
-    def build(self, assertion: SingleAssert, prepared: SingleAssertContext) -> list[NamedColumn]:
+class SingleAssertEvaluator(BaseSingleDataFrameEvaluator[SingleAssertAll]):
+    def build(self, assertion: SingleAssertAll, prepared: SingleAssertContext) -> list[NamedColumn]:
         name = self._column_prefix(prepared.namespace) + _to_literal_name(assertion.predicate)
         return [
             NamedColumn(name=name, column=F.count(F.when(~F.expr(assertion.predicate), 1)).alias(name)),
         ]
 
     def finalize(
-        self, assertion: SingleAssert, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
+        self, assertion: SingleAssertAll, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
     ) -> list[AssertionResult]:
         exec_result = step_result.executed
         violated = exec_result[step_result.plan[0].name]
@@ -173,7 +173,7 @@ class SinglePredicateFusedAssertionEvaluator(
 ):
     def __init__(self) -> None:
         self._assertion_evaluators: dict[type[BaseSingleAssrtion], BaseSingleDataFrameEvaluator[Any]] = {
-            SingleAssert: SingleAssertEvaluator(),
+            SingleAssertAll: SingleAssertEvaluator(),
             SingleAssertEmpty: SingleAssertEmptyEvaluator(),
             SingleAssertNotEmpty: SingleAssertNotEmptyEvaluator(),
         }

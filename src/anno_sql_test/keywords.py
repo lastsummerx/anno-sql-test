@@ -11,7 +11,7 @@ from anno_sql_test.models import (
     MultiAggAssertNumericDeltaApprox,
     MultiAggAssertNumericRatioApprox,
     MultiAggAssertTemporalApprox,
-    SingleAssert,
+    SingleAssertAll,
     SingleAssertEmpty,
     SingleAssertNotEmpty,
     SingleAssertUnique,
@@ -31,9 +31,9 @@ class AssertKeyword(ABC):
         ...
 
 
-class SingleAssertKeyword(AssertKeyword):
+class SingleAssertAllKeyword(AssertKeyword):
     def build(self, rest: str, line: str) -> Assertion:
-        return SingleAssert(predicate=rest)
+        return SingleAssertAll(predicate=rest)
 
 
 class SingleAssertEmptyKeyword(AssertKeyword):
@@ -140,7 +140,7 @@ class DependencyKeyword:
 
 
 _KEYWORD_MAP: dict[str, AssertKeyword | DependencyKeyword] = {
-    "assert": SingleAssertKeyword(),
+    "assert_all": SingleAssertAllKeyword(),
     "assert_empty": SingleAssertEmptyKeyword(),
     "assert_not_empty": SingleAssertNotEmptyKeyword(),
     "assert_unique": SingleAssertUniqueKeyword(),
@@ -148,9 +148,9 @@ _KEYWORD_MAP: dict[str, AssertKeyword | DependencyKeyword] = {
     "assert_agg_numeric_ratio_approx": MultiAggAssertNumericRatioKeyword(),
     "assert_agg_numeric_delta_approx": MultiAggAssertNumericDeltaKeyword(),
     "assert_agg_temporal_approx": MultiAggAssertTemporalKeyword(),
-    "assert_equal": DualJoinAssertEqualKeyword(),
-    "assert_numeric_ratio_approx": DualJoinAssertNumericRatioKeyword(),
-    "assert_numeric_delta_approx": DualJoinAssertNumericDeltaKeyword(),
-    "assert_temporal_approx": DualJoinAssertTemporalKeyword(),
+    "assert_join_equal": DualJoinAssertEqualKeyword(),
+    "assert_join_numeric_ratio_approx": DualJoinAssertNumericRatioKeyword(),
+    "assert_join_numeric_delta_approx": DualJoinAssertNumericDeltaKeyword(),
+    "assert_join_temporal_approx": DualJoinAssertTemporalKeyword(),
     "dependency": DependencyKeyword(),
 }

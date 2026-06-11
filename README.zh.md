@@ -46,7 +46,7 @@ uv sync --extra excel
 
 ```sql
 -- @test users_active
--- @assert status = 'ACTIVE'
+-- @assert_all status = 'ACTIVE'
 -- @assert_not_empty
 SELECT id, name, status FROM users WHERE status = 'ACTIVE';
 
@@ -57,7 +57,7 @@ SELECT * FROM users WHERE status = 'ACTIVE';
 
 -- @test compare_revenue
 -- @dependency users_active
--- @assert_numeric_ratio_approx 0.01 on id values amount
+-- @assert_join_numeric_ratio_approx 0.01 on id values amount
 SELECT id, amount FROM orders_2024;
 SELECT id, amount FROM orders_2025;
 ```
@@ -95,7 +95,7 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | `@test` | `<name>` | 标记一个测试用例的开始 |
 | `@non_test` | — | 标记一个非测试 SQL 块（setup / teardown，不含断言） |
 | `@dependency` | `<name1>[, <name2>]` | 声明依赖同一文件中的其他测试 |
-| `@assert` | `<predicate>` | 所有行必须满足该谓词条件 |
+| `@assert_all` | `<predicate>` | 所有行必须满足该谓词条件 |
 | `@assert_empty` | — | DataFrame 必须为空 |
 | `@assert_not_empty` | — | DataFrame 必须非空 |
 | `@assert_unique` | `<field1>[, <field2>]` | 指定列组合必须唯一 |
@@ -103,10 +103,10 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields>` | 聚合结果近似相等：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
 | `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields>` | 聚合结果近似相等：`\|a - b\| <= delta` |
 | `@assert_agg_temporal_approx` | `<agg> <duration> <fields>` | 聚合结果近似相等：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
-| `@assert_equal` | `on <keys> values <vals>` | 按 key 连接后，值列必须完全一致 |
-| `@assert_numeric_ratio_approx` | `<ratio> on <keys> values <vals>` | 连接比较：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
-| `@assert_numeric_delta_approx` | `<delta> on <keys> values <vals>` | 连接比较：`\|a - b\| <= delta` |
-| `@assert_temporal_approx` | `<duration> on <keys> values <vals>` | 连接比较：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
+| `@assert_join_equal` | `on <keys> values <vals>` | 按 key 连接后，值列必须完全一致 |
+| `@assert_join_numeric_ratio_approx` | `<ratio> on <keys> values <vals>` | 连接比较：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
+| `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | 连接比较：`\|a - b\| <= delta` |
+| `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | 连接比较：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
 
 > **说明**：`<fields>` 支持 `*` 表示所有共同列；`<duration>` 使用 ISO 8601 格式（如 `P1DT12H`）；`<fields>` `<key>` `<value>` 均支持 SQL 表达式。
 >

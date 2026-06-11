@@ -4,7 +4,7 @@ from pyspark.sql import SparkSession
 
 from anno_sql_test.models import (
     MultiAggAssertEqual,
-    SingleAssert,
+    SingleAssertAll,
     SingleAssertNotEmpty,
     SqlTestCase,
     SqlTestSuite,
@@ -24,7 +24,7 @@ def test_run_single_pass():
     suite = SqlTestSuite(path=Path("/fake/test.sql"))
     suite.blocks.append(SqlTestCase(
         name="test1",
-        assertions=[SingleAssert(predicate="a > 0")],
+        assertions=[SingleAssertAll(predicate="a > 0")],
         sql_statements=["SELECT 1 AS a"],
     ))
     result = runner.run(suite)
@@ -37,7 +37,7 @@ def test_run_single_fail():
     suite = SqlTestSuite(path=Path("/fake/test.sql"))
     suite.blocks.append(SqlTestCase(
         name="test1",
-        assertions=[SingleAssert(predicate="a > 10")],
+        assertions=[SingleAssertAll(predicate="a > 10")],
         sql_statements=["SELECT 1 AS a"],
     ))
     result = runner.run(suite)
@@ -59,13 +59,13 @@ def test_run_skip_dependency():
     suite = SqlTestSuite(path=Path("/fake/test.sql"))
     suite.blocks.append(SqlTestCase(
         name="base",
-        assertions=[SingleAssert(predicate="a > 10")],
+        assertions=[SingleAssertAll(predicate="a > 10")],
         sql_statements=["SELECT 1 AS a"],
     ))
     suite.blocks.append(SqlTestCase(
         name="dependent",
         dependencies=["base"],
-        assertions=[SingleAssert(predicate="a > 0")],
+        assertions=[SingleAssertAll(predicate="a > 0")],
         sql_statements=["SELECT 1 AS a"],
     ))
     result = runner.run(suite)
@@ -84,7 +84,7 @@ def test_run_multiple_assertions():
     suite.blocks.append(SqlTestCase(
         name="multi",
         assertions=[
-            SingleAssert(predicate="a > 0"),
+            SingleAssertAll(predicate="a > 0"),
             SingleAssertNotEmpty(),
         ],
         sql_statements=["SELECT 1 AS a"],

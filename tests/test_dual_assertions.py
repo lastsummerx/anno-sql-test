@@ -253,7 +253,7 @@ def test_equal_by_key_expression_values_fail():
     assert result.passed is False
 
 
-def test_assert_equal_requires_two_dfs():
+def test_assert_join_equal_requires_two_dfs():
     result = evaluator.evaluate(
         DualJoinAssertEqual(keys=["id"], values=["name"]),
         [

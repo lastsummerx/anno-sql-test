@@ -14,7 +14,7 @@ from anno_sql_test.models import (
     MultiAggAssertNumericDeltaApprox,
     MultiAggAssertNumericRatioApprox,
     MultiAggAssertTemporalApprox,
-    SingleAssert,
+    SingleAssertAll,
     SingleAssertEmpty,
     SingleAssertNotEmpty,
     SingleAssertUnique,
@@ -23,7 +23,7 @@ from anno_sql_test.parser import parse_file
 
 SINGLE_FILE = textwrap.dedent("""\
     -- @TEST test_non_null
-    -- @assert aaa is not null
+    -- @assert_all aaa is not null
     select aaa from table_a;
 """)
 
@@ -39,7 +39,7 @@ DUAL_FILE = textwrap.dedent("""\
 
 MULTI_TEST_FILE = textwrap.dedent("""\
     -- @TEST test_one
-    -- @assert aaa > 0
+    -- @assert_all aaa > 0
     select aaa from table_a;
 
     -- @TEST test_two
@@ -55,7 +55,7 @@ DEP_FILE = textwrap.dedent("""\
 
     -- @TEST test_check
     -- @dependency test_base
-    -- @assert id is not null
+    -- @assert_all id is not null
     select id from raw;
 """)
 
@@ -69,7 +69,7 @@ UNIQUE_FILE = textwrap.dedent("""\
 
 EQUAL_FILE = textwrap.dedent("""\
     -- @TEST test_equal
-    -- @assert_equal on id, date values amount, status
+    -- @assert_join_equal on id, date values amount, status
     select id, date, amount, status from left_tbl;
 
     select id, date, amount, status from right_tbl;
@@ -84,8 +84,8 @@ def test_parse_single_assert(tmp_path: Path):
     case = suite.cases[0]
     assert case.name == "test_non_null"
     assert len(case.assertions) == 1
-    a = cast(SingleAssert, case.assertions[0])
-    assert isinstance(a, SingleAssert)
+    a = cast(SingleAssertAll, case.assertions[0])
+    assert isinstance(a, SingleAssertAll)
     assert a.predicate == "aaa is not null"
     assert len(case.sql_statements) == 1
     assert "select aaa from table_a" in case.sql_statements[0]
@@ -227,7 +227,7 @@ def test_parse_agg_numeric_ratio_approx_multi_field(tmp_path: Path):
 
 def test_parse_numeric_ratio_approx(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_numeric_ratio_approx 0.05 on id values total\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_numeric_ratio_approx 0.05 on id values total\nselect 1;\nselect 2;")
     suite = parse_file(p)
     a = cast(DualJoinAssertNumericRatioApprox, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertNumericRatioApprox)
@@ -262,28 +262,28 @@ def test_parse_agg_numeric_ratio_approx_missing_args(tmp_path: Path):
 
 def test_parse_missing_on_keyword(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_equal id values name\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_equal id values name\nselect 1;\nselect 2;")
     with pytest.raises(ParseError, match="Expected.*on"):
         parse_file(p)
 
 
 def test_parse_missing_values_keyword(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_equal on id name\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_equal on id name\nselect 1;\nselect 2;")
     with pytest.raises(ParseError, match="Expected.*values"):
         parse_file(p)
 
 
 def test_parse_empty_keys_or_values(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_equal on , values ,\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_equal on , values ,\nselect 1;\nselect 2;")
     with pytest.raises(ParseError, match="Empty"):
         parse_file(p)
 
 
 def test_parse_equal_expression_values(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_equal on id values a + b\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_equal on id values a + b\nselect 1;\nselect 2;")
     suite = parse_file(p)
     a = cast(DualJoinAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertEqual)
@@ -293,7 +293,9 @@ def test_parse_equal_expression_values(tmp_path: Path):
 
 def test_parse_numeric_ratio_approx_expression_values(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_numeric_ratio_approx 0.05 on id values a + b, a - b\nselect 1;\nselect 2;")
+    p.write_text(
+        "-- @TEST t\n-- @assert_join_numeric_ratio_approx 0.05 on id values a + b, a - b\nselect 1;\nselect 2;",
+    )
     suite = parse_file(p)
     a = cast(DualJoinAssertNumericRatioApprox, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertNumericRatioApprox)
@@ -304,19 +306,19 @@ def test_parse_numeric_ratio_approx_expression_values(tmp_path: Path):
 
 def test_parse_numeric_ratio_approx_missing_args(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_numeric_ratio_approx\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_numeric_ratio_approx\nselect 1;\nselect 2;")
     with pytest.raises(ParseError, match="Expected.*ratio"):
         parse_file(p)
 
     p2 = tmp_path / "f2.sql"
-    p2.write_text("-- @TEST t\n-- @assert_numeric_ratio_approx bad on id values total\nselect 1;\nselect 2;")
+    p2.write_text("-- @TEST t\n-- @assert_join_numeric_ratio_approx bad on id values total\nselect 1;\nselect 2;")
     with pytest.raises(ParseError, match="Invalid ratio"):
         parse_file(p2)
 
 
 def test_parse_numeric_delta_approx(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_numeric_delta_approx 10.5 on id values total\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_numeric_delta_approx 10.5 on id values total\nselect 1;\nselect 2;")
     suite = parse_file(p)
     a = cast(DualJoinAssertNumericDeltaApprox, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertNumericDeltaApprox)
@@ -327,7 +329,7 @@ def test_parse_numeric_delta_approx(tmp_path: Path):
 
 def test_parse_numeric_delta_approx_missing_args(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_numeric_delta_approx\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_numeric_delta_approx\nselect 1;\nselect 2;")
     with pytest.raises(ParseError, match="Expected.*delta"):
         parse_file(p)
 
@@ -352,7 +354,7 @@ def test_parse_agg_numeric_delta_approx_missing_args(tmp_path: Path):
 
 def test_parse_temporal_approx(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_temporal_approx P1DT12H on id values ts\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_temporal_approx P1DT12H on id values ts\nselect 1;\nselect 2;")
     suite = parse_file(p)
     a = cast(DualJoinAssertTemporalApprox, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertTemporalApprox)
@@ -363,7 +365,7 @@ def test_parse_temporal_approx(tmp_path: Path):
 
 def test_parse_temporal_approx_invalid_duration(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_temporal_approx bad on id values ts\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_temporal_approx bad on id values ts\nselect 1;\nselect 2;")
     with pytest.raises(ParseError, match="Invalid ISO 8601 duration"):
         parse_file(p)
 
