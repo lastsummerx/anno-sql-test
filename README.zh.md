@@ -110,7 +110,16 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | 连接比较：`\|a - b\| <= delta` |
 | `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | 连接比较：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
 
-> **说明**：`<fields>` 支持 `*` 表示所有共同列；`<duration>` 使用 ISO 8601 格式（如 `P1DT12H`）；`<fields>` `<key>` `<value>` 均支持 SQL 表达式。
+> **说明**：`<fields>`、`<predicate>`、`<key>`、`<value>` 均支持 SQL 表达式。
+>
+> **`*` 通配符支持**：
+> - `*` — 所有共同列
+> - `*_cnt`、`prefix*`、`a*b` — 通配符模式匹配列名
+> - `numeric:*`、`string:*`、`temporal:*` — 指定数据类型的列
+> - 组合使用：`numeric:*_cnt` — 数值类型中匹配 `*_cnt` 的列
+> - 在谓词中使用（如 `@assert_all`）：`numeric:* is not null`、`*_cnt is not null`、`nvl(*, '@') != ''`
+>
+> `<duration>` 使用 ISO 8601 格式（如 `P1DT12H`）。
 >
 > **自动 SQL**：第一个 `@test` / `@non_test` 之前的 SQL 语句会自动视为非测试块（等价于 `@non_test`）。
 

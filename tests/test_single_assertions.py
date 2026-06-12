@@ -126,6 +126,102 @@ def test_assert_none_all_rows_match_fail():
     assert result.passed is False
 
 
+def test_assert_all_star_is_not_null_pass():
+    df = spark.createDataFrame([(1, "a"), (2, "b")], ["a", "b"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="* is not null"), [df])
+    assert result.passed is True
+
+
+def test_assert_all_star_is_not_null_fail():
+    df = spark.createDataFrame([(1, "a"), (None, "b")], ["a", "b"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="* is not null"), [df])
+    assert result.passed is False
+
+
+def test_assert_all_star_expr_pass():
+    df = spark.createDataFrame([("a", "x"), ("b", "y")], ["a", "b"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="nvl(*, '@') != ''"), [df])
+    assert result.passed is True
+
+
+def test_assert_all_star_expr_fail():
+    df = spark.createDataFrame([("a", "x"), ("", "y")], ["a", "b"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="nvl(*, '@') != ''"), [df])
+    assert result.passed is False
+
+
+def test_assert_any_star_is_not_null_pass():
+    df = spark.createDataFrame([(None, None), (1, None)], schema="a: int, b: int")
+    result = evaluator.evaluate(SingleAssertAny(predicate="* is not null"), [df])
+    assert result.passed is True
+
+
+def test_assert_any_star_is_not_null_fail():
+    df = spark.createDataFrame([(None, None), (None, None)], schema="a: int, b: int")
+    result = evaluator.evaluate(SingleAssertAny(predicate="* is not null"), [df])
+    assert result.passed is False
+
+
+def test_assert_none_star_is_null_pass():
+    df = spark.createDataFrame([(1, "a"), (2, "b")], ["a", "b"])
+    result = evaluator.evaluate(SingleAssertNone(predicate="* is null"), [df])
+    assert result.passed is True
+
+
+def test_assert_none_star_is_null_fail():
+    df = spark.createDataFrame([(1, "a"), (None, "b")], ["a", "b"])
+    result = evaluator.evaluate(SingleAssertNone(predicate="* is null"), [df])
+    assert result.passed is False
+
+
+def test_assert_all_numeric_star_is_not_null_pass():
+    df = spark.createDataFrame([(1, "a", 3.0), (2, "b", 4.0)], ["a", "b", "c"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="numeric:* is not null"), [df])
+    assert result.passed is True
+
+
+def test_assert_all_numeric_star_is_not_null_fail():
+    df = spark.createDataFrame([(1, "a", None), (2, "b", 4.0)], ["a", "b", "c"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="numeric:* is not null"), [df])
+    assert result.passed is False
+
+
+def test_assert_all_glob_suffix_pass():
+    df = spark.createDataFrame([(1, "x"), (2, "y")], ["a_cnt", "b_other"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="*_cnt is not null"), [df])
+    assert result.passed is True
+
+
+def test_assert_all_glob_suffix_fail():
+    df = spark.createDataFrame([(None, "x"), (2, "y")], ["a_cnt", "b_other"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="*_cnt is not null"), [df])
+    assert result.passed is False
+
+
+def test_assert_all_type_glob_combined():
+    df = spark.createDataFrame([(1, "x", 3.0), (2, "y", None)], ["a_cnt", "b_str", "c_cnt"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="numeric:*_cnt is not null"), [df])
+    assert result.passed is False
+
+
+def test_assert_all_glob_prefix_pass():
+    df = spark.createDataFrame([(1, "x"), (2, "y")], ["cnt_a", "other_b"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="cnt_* is not null"), [df])
+    assert result.passed is True
+
+
+def test_assert_all_star_quoted_literal():
+    df = spark.createDataFrame([("a", "x"), ("b", "y")], ["a", "b"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="nvl(*, '*:') != ''"), [df])
+    assert result.passed is True
+
+
+def test_assert_all_string_star_pass():
+    df = spark.createDataFrame([(1, "a", "x"), (2, "b", "y")], ["a", "b", "c"])
+    result = evaluator.evaluate(SingleAssertAll(predicate="string:* is not null"), [df])
+    assert result.passed is True
+
+
 def test_assert_unique_with_count_column():
     df = spark.createDataFrame([("a", 1), ("b", 2), ("c", 1)], ["count", "x"])
     result = evaluator.evaluate(SingleAssertUnique(fields=["count"]), [df])

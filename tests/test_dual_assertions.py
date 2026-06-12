@@ -40,6 +40,46 @@ def test_agg_equal_count_all_fail():
     assert result.passed is False
 
 
+def test_agg_equal_numeric_star_pass():
+    df1 = spark.createDataFrame([(10, "a", 1), (20, "b", 2)], ["val", "name", "id"])
+    df2 = spark.createDataFrame([(10, "c", 1), (20, "d", 2)], ["val", "name", "id"])
+    result = evaluator.evaluate(
+        MultiAggAssertEqual(agg="sum", fields=["numeric:*"]),
+        [df1, df2],
+    )
+    assert result.passed is True
+
+
+def test_agg_equal_numeric_star_fail():
+    df1 = spark.createDataFrame([(1, "a", 10), (2, "b", 20)], ["id", "name", "val"])
+    df2 = spark.createDataFrame([(3, "c", 5), (4, "d", 25)], ["id", "name", "val"])
+    result = evaluator.evaluate(
+        MultiAggAssertEqual(agg="sum", fields=["numeric:*"]),
+        [df1, df2],
+    )
+    assert result.passed is False
+
+
+def test_agg_equal_glob_suffix_pass():
+    df1 = spark.createDataFrame([(10, 1), (20, 2)], ["val_cnt", "id"])
+    df2 = spark.createDataFrame([(10, 1), (20, 2)], ["val_cnt", "id"])
+    result = evaluator.evaluate(
+        MultiAggAssertEqual(agg="sum", fields=["*_cnt"]),
+        [df1, df2],
+    )
+    assert result.passed is True
+
+
+def test_agg_equal_type_glob_combined_pass():
+    df1 = spark.createDataFrame([(1, "a", 10), (2, "b", 20)], ["id", "name", "val_cnt"])
+    df2 = spark.createDataFrame([(1, "c", 10), (2, "d", 20)], ["id", "name", "val_cnt"])
+    result = evaluator.evaluate(
+        MultiAggAssertEqual(agg="sum", fields=["numeric:*_cnt"]),
+        [df1, df2],
+    )
+    assert result.passed is True
+
+
 def test_agg_equal_sum_pass():
     df1 = spark.createDataFrame([(100,), (200,)], ["amt"])
     df2 = spark.createDataFrame([(150,), (150,)], ["amt"])

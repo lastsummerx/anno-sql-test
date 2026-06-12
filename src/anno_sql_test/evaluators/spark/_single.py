@@ -15,7 +15,7 @@ from anno_sql_test.evaluators.spark._base import (
     BaseStepwiseSparkEvaluator,
     DelegatingStepwiseSparkFusedEvaluator,
 )
-from anno_sql_test.evaluators.spark._util import NamedColumn, _to_literal_name
+from anno_sql_test.evaluators.spark._util import NamedColumn, _to_literal_name, resolve_fields
 from anno_sql_test.models import (
     Assertion,
     AssertionResult,
@@ -67,25 +67,38 @@ class BaseSingleDataFrameEvaluator[T: SingleAssertion](
         return prepared.dataframe.agg(prepared.total, *(p.column for p in plan)).collect()[0]
 
 
-class SingleAssertEvaluator(BaseSingleDataFrameEvaluator[SingleAssertAll]):
+class SingleAssertAllEvaluator(BaseSingleDataFrameEvaluator[SingleAssertAll]):
     def build(self, assertion: SingleAssertAll, prepared: SingleAssertContext) -> list[NamedColumn]:
-        name = self._column_prefix(prepared.namespace) + _to_literal_name(assertion.predicate)
-        return [
-            NamedColumn(name=name, column=F.count(F.when(~F.expr(assertion.predicate), 1)).alias(name)),
-        ]
+        predicates = resolve_fields([assertion.predicate], [prepared.dataframe])
+        result = []
+        for pred in predicates:
+            name = self._column_prefix(prepared.namespace) + _to_literal_name(pred)
+            result.append(NamedColumn(name=name, column=F.count(F.when(~F.expr(pred), 1)).alias(name)))
+        return result
 
     def finalize(
         self, assertion: SingleAssertAll, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
     ) -> list[AssertionResult]:
         exec_result = step_result.executed
-        violated = exec_result[step_result.plan[0].name]
-        if violated == 0:
+        failures = []
+        for plan_entry in step_result.plan:
+            violated = exec_result[plan_entry.name]
+            if violated > 0:
+                failures.append((plan_entry.name, violated))
+        if not failures:
             return [AssertionResult(assertion=assertion, passed=True)]
         total = exec_result[self.TOTAL_COL]
-        pct = violated / total * 100
+        if len(failures) == 1:
+            name, cnt = failures[0]
+            pct = cnt / total * 100
+            return [AssertionResult(
+                assertion=assertion, passed=False,
+                message=f"Found {cnt} row(s) ({pct:.1f}%) violating: {assertion.predicate}",
+            )]
+        details = "; ".join(f"{name}: {cnt} ({cnt/total*100:.1f}%)" for name, cnt in failures)
         return [AssertionResult(
             assertion=assertion, passed=False,
-            message=f"Found {violated} row(s) ({pct:.1f}%) violating: {assertion.predicate}",
+            message=f"Found violations: {details}",
         )]
 
 
@@ -120,18 +133,21 @@ class SingleAssertNotEmptyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertNot
 
 class SingleAssertAnyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertAny]):
     def build(self, assertion: SingleAssertAny, prepared: SingleAssertContext) -> list[NamedColumn]:
-        name = self._column_prefix(prepared.namespace) + _to_literal_name(assertion.predicate)
-        return [
-            NamedColumn(name=name, column=F.count(F.when(F.expr(assertion.predicate), 1)).alias(name)),
-        ]
+        predicates = resolve_fields([assertion.predicate], [prepared.dataframe])
+        result = []
+        for pred in predicates:
+            name = self._column_prefix(prepared.namespace) + _to_literal_name(pred)
+            result.append(NamedColumn(name=name, column=F.count(F.when(F.expr(pred), 1)).alias(name)))
+        return result
 
     def finalize(
         self, assertion: SingleAssertAny, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
     ) -> list[AssertionResult]:
         exec_result = step_result.executed
-        matched = exec_result[step_result.plan[0].name]
-        if matched > 0:
-            return [AssertionResult(assertion=assertion, passed=True)]
+        for plan_entry in step_result.plan:
+            matched = exec_result[plan_entry.name]
+            if matched > 0:
+                return [AssertionResult(assertion=assertion, passed=True)]
         total = exec_result[self.TOTAL_COL]
         return [AssertionResult(
             assertion=assertion, passed=False,
@@ -141,23 +157,36 @@ class SingleAssertAnyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertAny]):
 
 class SingleAssertNoneEvaluator(BaseSingleDataFrameEvaluator[SingleAssertNone]):
     def build(self, assertion: SingleAssertNone, prepared: SingleAssertContext) -> list[NamedColumn]:
-        name = self._column_prefix(prepared.namespace) + _to_literal_name(assertion.predicate)
-        return [
-            NamedColumn(name=name, column=F.count(F.when(F.expr(assertion.predicate), 1)).alias(name)),
-        ]
+        predicates = resolve_fields([assertion.predicate], [prepared.dataframe])
+        result = []
+        for pred in predicates:
+            name = self._column_prefix(prepared.namespace) + _to_literal_name(pred)
+            result.append(NamedColumn(name=name, column=F.count(F.when(F.expr(pred), 1)).alias(name)))
+        return result
 
     def finalize(
         self, assertion: SingleAssertNone, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
     ) -> list[AssertionResult]:
         exec_result = step_result.executed
-        matched = exec_result[step_result.plan[0].name]
-        if matched == 0:
+        failures = []
+        for plan_entry in step_result.plan:
+            matched = exec_result[plan_entry.name]
+            if matched > 0:
+                failures.append((plan_entry.name, matched))
+        if not failures:
             return [AssertionResult(assertion=assertion, passed=True)]
         total = exec_result[self.TOTAL_COL]
-        pct = matched / total * 100
+        if len(failures) == 1:
+            name, cnt = failures[0]
+            pct = cnt / total * 100
+            return [AssertionResult(
+                assertion=assertion, passed=False,
+                message=f"Found {cnt} row(s) ({pct:.1f}%) matching: {assertion.predicate}, expected 0",
+            )]
+        details = "; ".join(f"{name}: {cnt} ({cnt/total*100:.1f}%)" for name, cnt in failures)
         return [AssertionResult(
             assertion=assertion, passed=False,
-            message=f"Found {matched} row(s) ({pct:.1f}%) matching: {assertion.predicate}, expected 0",
+            message=f"Found rows matching: {details}",
         )]
 
 
@@ -216,7 +245,7 @@ class SinglePredicateFusedAssertionEvaluator(
 ):
     def __init__(self) -> None:
         self._assertion_evaluators: dict[type[SingleAssertion], BaseSingleDataFrameEvaluator[Any]] = {
-            SingleAssertAll: SingleAssertEvaluator(),
+            SingleAssertAll: SingleAssertAllEvaluator(),
             SingleAssertAny: SingleAssertAnyEvaluator(),
             SingleAssertNone: SingleAssertNoneEvaluator(),
             SingleAssertEmpty: SingleAssertEmptyEvaluator(),

@@ -110,7 +110,16 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | Join compare: `\|a - b\| <= delta` |
 | `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | Join compare: `\|a - b\| <= duration_seconds` (ISO 8601) |
 
-> **Note**: `<fields>` supports `*` to mean all common columns; `<duration>` uses ISO 8601 format (e.g. `P1DT12H`); `<fields>`, `<key>`, and `<value>` all support SQL expressions.
+> **Note**: `<fields>`, `<predicate>`, `<key>`, and `<value>` all support SQL expressions.
+>
+> **`*` wildcard support**:
+> - `*` — all common columns across DataFrames
+> - `*_cnt`, `prefix*`, `a*b` — glob pattern matching column names
+> - `numeric:*`, `string:*`, `temporal:*` — columns of a specific data type
+> - Combined: `numeric:*_cnt` — numeric columns matching `*_cnt`
+> - In predicates (e.g. `@assert_all`): `numeric:* is not null`, `*_cnt is not null`, `nvl(*, '@') != ''`
+>
+> `<duration>` uses ISO 8601 format (e.g. `P1DT12H`).
 >
 > **Auto SQL**: Any SQL statements before the first `@test` / `@non_test` annotation are automatically treated as a non-test block (equivalent to `@non_test`).
 

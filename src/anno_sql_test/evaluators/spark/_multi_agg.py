@@ -19,11 +19,12 @@ from anno_sql_test.evaluators.spark._util import (
     ColumnComparator,
     ColumnTypeChecker,
     NamedColumn,
+    _batch_validate_types,
     _build_aliased_columns,
     _check_numeric,
     _check_temporal,
-    _resolve_fields,
     _to_literal_name,
+    resolve_fields,
 )
 from anno_sql_test.models import (
     Assertion,
@@ -68,25 +69,20 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
     def validate(self, assertion: T, dataframes: list[DataFrame]) -> list[tuple[str, Assertion]]:
         if len(dataframes) < 2:
             return [(f"Expected at least 2 DataFrames, got {len(dataframes)}", assertion)]
-        fields = _resolve_fields(assertion.fields, dataframes)
+        fields = resolve_fields(assertion.fields, dataframes)
         if not fields:
             return [("No common columns across all DataFrames", assertion)]
         type_checker = self.get_type_checker()
         if type_checker is None:
             return []
-        errors = []
-        for i, df in enumerate(dataframes):
-            for f in fields:
-                err = type_checker(df.schema, f)
-                if err:
-                    errors.append(f"{err} in df[{i}]")
+        errors = _batch_validate_types(type_checker, fields, dataframes)
         return [(";".join(errors), assertion)] if errors else []
 
     @classmethod
     def prepare_values(
         cls, dataframes: list[DataFrame], agg: str, values: list[str], namespace: str = "",
     ) -> list[NamedColumn]:
-        fields = _resolve_fields(values, dataframes)
+        fields = resolve_fields(values, dataframes)
         agg_fields = [f"{agg}({x})" for x in fields]
         prefix = f"_{namespace}_agg_" if namespace else "_agg_"
         agg_cols = _build_aliased_columns(agg_fields, prefix)

@@ -21,10 +21,11 @@ from anno_sql_test.evaluators.spark._util import (
     ColumnComparator,
     ColumnTypeChecker,
     NamedColumn,
+    _batch_validate_types,
     _build_aliased_columns,
     _check_numeric,
     _check_temporal,
-    _resolve_fields,
+    resolve_fields,
 )
 from anno_sql_test.models import (
     Assertion,
@@ -58,23 +59,18 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
     def validate(self, assertion: T, dataframes: list[DataFrame]) -> list[tuple[str, Assertion]]:
         if len(dataframes) != 2:
             return [(f"Expected exactly 2 DataFrames, got {len(dataframes)}", assertion)]
-        fields = _resolve_fields(assertion.values, dataframes)
+        fields = resolve_fields(assertion.values, dataframes)
         if not fields:
             return [("No common columns across all DataFrames", assertion)]
         type_checker = self.get_type_checker()
         if type_checker is None:
             return []
-        errors = []
-        for i, df in enumerate(dataframes):
-            for f in fields:
-                err = type_checker(df.schema, f)
-                if err:
-                    errors.append(f"{err} in df[{i}]")
+        errors = _batch_validate_types(type_checker, fields, dataframes)
         return [(";".join(errors), assertion)] if errors else []
 
     @classmethod
     def prepare_values(cls, dataframes: list[DataFrame], values: list[str], namespace: str = "") -> list[NamedColumn]:
-        original_values = _resolve_fields(values, dataframes)
+        original_values = resolve_fields(values, dataframes)
         prefix = f"_{namespace}_val_" if namespace else "_val_"
         value_cols = _build_aliased_columns(original_values, prefix)
         return [NamedColumn(name=ov, column=vc, namespace=namespace) for ov, vc in zip(original_values, value_cols)]
