@@ -1,9 +1,11 @@
 import argparse
+import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from anno_sql_test.discover import discover_sql_files
+from anno_sql_test.log import setup_logging
 from anno_sql_test.parser import parse_suite
 from anno_sql_test.reporter import (
     ConsoleReporter,
@@ -48,6 +50,8 @@ def create_parser():
     parent_parser.add_argument("--pattern", default="*.sql", help="File glob pattern (default: *.sql)")
     parent_parser.add_argument("--report-type", default="console",
                               help="Output report type(s): xlsx,txt,console (comma-separated, default: console)")
+    parent_parser.add_argument("-v", "--verbose", action="count", default=0,
+                              help="Increase verbosity (-v: INFO, -vv: DEBUG)")
 
     parser = argparse.ArgumentParser(prog="anno-sql-test", description="PySpark SQL unit testing framework")
     subparsers = parser.add_subparsers(dest="backend", required=True, help="Backend to use")
@@ -66,6 +70,7 @@ def main(args=None):
 
     parser = create_parser()
     parsed = parser.parse_args(args)
+    setup_logging(parsed.verbose)
 
     if parsed.backend == "spark":
         from pyspark.sql import SparkSession
@@ -83,7 +88,7 @@ def main(args=None):
         spark = builder.getOrCreate()
         runner = SparkRunner(spark)
     else:
-        print(f"Backend '{parsed.backend}' is not yet implemented")
+        logging.error("Backend '%s' is not yet implemented", parsed.backend)
         return 1
 
     files = discover_sql_files(Path(parsed.path), parsed.pattern)

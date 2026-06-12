@@ -68,14 +68,18 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
 ):
     def validate(self, assertion: T, dataframes: list[DataFrame]) -> list[tuple[str, Assertion]]:
         if len(dataframes) < 2:
+            self.logger.warning("Expected >=2 DataFrames, got %d for %s", len(dataframes), type(assertion).__name__)
             return [(f"Expected at least 2 DataFrames, got {len(dataframes)}", assertion)]
         fields = resolve_fields(assertion.fields, dataframes)
         if not fields:
+            self.logger.warning("No common columns for %s", type(assertion).__name__)
             return [("No common columns across all DataFrames", assertion)]
         type_checker = self.get_type_checker()
         if type_checker is None:
             return []
         errors = _batch_validate_types(type_checker, fields, dataframes)
+        if errors:
+            self.logger.warning("Type validation failed for %s: %s", type(assertion).__name__, errors)
         return [(";".join(errors), assertion)] if errors else []
 
     @classmethod
@@ -120,6 +124,7 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
         return MultiAggContext(dataframe=result_df, original_values=original_values, n=n, col_for=col_for)
 
     def prepare(self, assertion: T, dataframes: list[DataFrame]) -> MultiAggContext:
+        self.logger.debug("Preparing %s: agg=%s, fields=%s", type(assertion).__name__, assertion.agg, assertion.fields)
         values = self.prepare_values(dataframes, assertion.agg, assertion.fields)
         return self.prepare_shared(dataframes, values)
 
@@ -160,6 +165,7 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
         exec_result = step_result.executed
         bad_parts = []
         agg = assertion.agg
+        self.logger.debug("Finalizing %s: %d comparisons", type(assertion).__name__, len(step_result.plan.comperations))
         for cmp in step_result.plan.comperations:
             if not exec_result[cmp.name]:
                 left_val = exec_result[cmp.df_i_column]
@@ -241,6 +247,7 @@ class MultiAggFusedAssertionEvaluator(
     def prepare(
         self, assertion: FusedAssertion[MultiAggAssertion], dataframes: list[DataFrame],
     ) -> list[MultiAggContext]:
+        self.logger.debug("Fused prepare for %d MultiAggAssertion assertions", len(assertion.assertions))
         all_values = []
         for i, asrt in enumerate(assertion.assertions):
             evaluator = self._assertion_evaluators[type(asrt)]

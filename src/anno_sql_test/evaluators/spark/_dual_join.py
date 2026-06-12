@@ -58,14 +58,18 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
 
     def validate(self, assertion: T, dataframes: list[DataFrame]) -> list[tuple[str, Assertion]]:
         if len(dataframes) != 2:
+            self.logger.warning("Expected 2 DataFrames, got %d for %s", len(dataframes), type(assertion).__name__)
             return [(f"Expected exactly 2 DataFrames, got {len(dataframes)}", assertion)]
         fields = resolve_fields(assertion.values, dataframes)
         if not fields:
+            self.logger.warning("No common columns for %s", type(assertion).__name__)
             return [("No common columns across all DataFrames", assertion)]
         type_checker = self.get_type_checker()
         if type_checker is None:
             return []
         errors = _batch_validate_types(type_checker, fields, dataframes)
+        if errors:
+            self.logger.warning("Type validation failed for %s: %s", type(assertion).__name__, errors)
         return [(";".join(errors), assertion)] if errors else []
 
     @classmethod
@@ -100,6 +104,7 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
         )
 
     def prepare(self, assertion: T, dataframes: list[DataFrame]) -> DualJoinContext:
+        self.logger.debug("Preparing %s: keys=%s", type(assertion).__name__, assertion.keys)
         values = self.prepare_values(dataframes, assertion.values)
         return self.prepare_shared(dataframes, assertion.keys, values)
 
@@ -137,6 +142,7 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
         prepared = step_result.prepared
         tv_name = self._total_violated_col(prepared.namespace)
         total_violated = exec_result[tv_name]
+        self.logger.debug("Finalizing %s: %d violated rows", type(assertion).__name__, total_violated)
         if total_violated == 0:
             return [AssertionResult(assertion=assertion, passed=True)]
 
@@ -220,6 +226,7 @@ class DualJoinFusedAssertionEvaluator(
     def prepare(
         self, assertion: FusedAssertion[DualJoinAssertion], dataframes: list[DataFrame],
     ) -> list[DualJoinContext]:
+        self.logger.debug("Fused prepare for %d DualJoinAssertion assertions", len(assertion.assertions))
         all_values = []
         keys = assertion.assertions[0].keys
         for i, asrt in enumerate(assertion.assertions):

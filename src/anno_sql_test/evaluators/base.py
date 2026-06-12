@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -43,18 +44,27 @@ class StepwiseAssertionMixin[T, DF, DAT, QRY, RST](ABC):
         ...
 
     def step_evaluate(self, assertion: T, dataframes: list[DF]) -> list[AssertionResult]:
+        self.logger.debug("Validating %s", type(assertion).__name__)
         validation_error = self.validate(assertion, dataframes)
         if validation_error:
+            self.logger.warning("Validation failed: %s", validation_error)
             return [AssertionResult(assertion=a, passed=False, message=msg) for msg, a in validation_error]
         try:
+            self.logger.debug("Preparing %s", type(assertion).__name__)
             prepared = self.prepare(assertion, dataframes)
+            self.logger.debug("Building plan for %s", type(assertion).__name__)
             plan = self.build(assertion, prepared)
+            self.logger.debug("Executing plan for %s", type(assertion).__name__)
             exec_result = self.execute(prepared, plan)
             step_result = StepResult(prepared=prepared, plan=plan, executed=exec_result)
             return self.finalize(assertion, step_result)
         except Exception as e:
-            raise e
+            self.logger.exception("Error evaluating %s: %s", type(assertion).__name__, e)
             return self.on_error(assertion, e)
+
+    @property
+    def logger(self):
+        return logging.getLogger(type(self).__module__)
 
 
 class BaseStepwiseAssertionEvaluator[T: Assertion, DF, DAT, QRY, RST](
@@ -113,6 +123,7 @@ class DelegatingStepwiseFusedAssertionEvaluator[T: Assertion, DF, DAT, QRY, RST]
         rst = []
         for asrt in assertion.assertions:
             evaluator = self.get_evaluator_map()[type(asrt)]
+            self.logger.debug("Delegating validate %s -> %s", type(asrt).__name__, type(evaluator).__name__)
             rst.extend(evaluator.validate(asrt, dataframes))
         return rst
 
@@ -122,6 +133,7 @@ class DelegatingStepwiseFusedAssertionEvaluator[T: Assertion, DF, DAT, QRY, RST]
         rst = []
         for asrt, sub_prepared in zip(assertion.assertions, prepared):
             evaluator = self.get_evaluator_map()[type(asrt)]
+            self.logger.debug("Delegating build %s -> %s", type(asrt).__name__, type(evaluator).__name__)
             rst.append(evaluator.build(asrt, sub_prepared))
         return rst
 
@@ -131,6 +143,7 @@ class DelegatingStepwiseFusedAssertionEvaluator[T: Assertion, DF, DAT, QRY, RST]
         rst = []
         for i, asrt in enumerate(assertion.assertions):
             evaluator = self.get_evaluator_map()[type(asrt)]
+            self.logger.debug("Delegating finalize %s -> %s", type(asrt).__name__, type(evaluator).__name__)
             sub_step_result = StepResult(
                 prepared=step_result.prepared[i],
                 plan=step_result.plan[i],

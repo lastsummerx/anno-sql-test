@@ -129,11 +129,12 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 
 ```text
 src/anno_sql_test/
-├── cli.py          # CLI 入口与参数解析
+├── cli.py          # CLI 入口与参数解析（argparse）
 ├── discover.py     # 递归发现 SQL 文件
 ├── models.py       # 数据模型（测试套件 / 用例 / 断言 / 结果 / 非测试块）
 ├── keywords.py     # 断言关键字定义 & 关键字映射表
-├── parser/         # SQL 注解解析（从 parser.py 重构为包）
+├── log.py          # 日志配置（可选 verbose 级别）
+├── parser/         # SQL 注解解析
 │   ├── __init__.py # 公开 API: parse_file, parse_suite
 │   ├── _tokenizer.py  # 分词器 & 辅助函数（ISO 时长解析、智能分割等）
 │   └── _parser.py     # 解析核心：注解、@test / @non_test / 自动 SQL
@@ -141,14 +142,30 @@ src/anno_sql_test/
 ├── reporter.py     # 报告输出（控制台 / TXT / Excel）
 ├── errors.py       # 自定义异常
 └── evaluators/
-    ├── base.py           # 断言求值器抽象基类
+    ├── base.py           # 断言求值器抽象基类 & 分步求值 mixin
+    ├── optimizer.py      # 断言融合优化器（group_as_fused）
+    ├── _field_parser.py  # 字段表达式分词器（通配符、类型前缀）
     └── spark/
-        ├── evaluator.py  # 断言派发器
-        ├── _single.py    # 单 DataFrame 断言
+        ├── __init__.py
+        ├── evaluator.py  # 断言派发器（单条 & 融合）
+        ├── _base.py      # Spark 求值器基础类
+        ├── _single.py    # 单 DataFrame 断言（all/any/none/empty/unique + 融合）
         ├── _multi_agg.py # 多 DataFrame 聚合断言
         ├── _dual_join.py # 双 DataFrame 连接断言
-        └── _util.py      # 工具函数
+        └── _util.py      # 工具函数（字段解析、类型检查器）
 ```
+
+### 断言求值器流水线
+
+断言求值采用**分步模式**（stepwise pattern）：
+
+1. **validate** — 检查前置条件（DataFrame 数量、列类型）
+2. **prepare** — 将断言转换为执行上下文
+3. **build** — 构建查询计划（Spark Column 表达式）
+4. **execute** — 对 DataFrame 执行计划
+5. **finalize** — 将执行结果转换为 `AssertionResult`（通过/失败）
+
+该流水线定义在 `evaluators/base.py` 的 `StepwiseAssertionMixin` 中，所有 Spark 求值器均实现此接口。同类型的断言会被 `optimizer.py` 自动**融合**（fused）为批量执行，提升效率。
 
 ### 断言类型
 

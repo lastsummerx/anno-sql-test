@@ -129,11 +129,12 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 
 ```text
 src/anno_sql_test/
-├── cli.py          # CLI entry & argument parsing
+├── cli.py          # CLI entry & argument parsing (argparse)
 ├── discover.py     # Recursive SQL file discovery
 ├── models.py       # Data models (suite, case, assertion, result, non-test block)
 ├── keywords.py     # Assertion keyword definitions & keyword map
-├── parser/         # SQL annotation parsing (package, refactored from parser.py)
+├── log.py          # Logging configuration (optional verbose levels)
+├── parser/         # SQL annotation parsing
 │   ├── __init__.py # Public API: parse_file, parse_suite
 │   ├── _tokenizer.py  # Tokenizer & helpers (ISO duration, smart split, etc.)
 │   └── _parser.py     # Parser core: hints, @test / @non_test / auto SQL
@@ -141,14 +142,30 @@ src/anno_sql_test/
 ├── reporter.py     # Report output (console, TXT, Excel)
 ├── errors.py       # Custom exceptions
 └── evaluators/
-    ├── base.py           # Abstract assertion evaluator base
+    ├── base.py           # Abstract assertion evaluator base & stepwise evaluation mixin
+    ├── optimizer.py      # Assertion fusion optimizer (group_as_fused)
+    ├── _field_parser.py  # Field expression tokenizer (glob, type-prefix)
     └── spark/
-        ├── evaluator.py  # Assertion dispatcher
-        ├── _single.py    # Single-DataFrame assertions
+        ├── __init__.py
+        ├── evaluator.py  # Assertion dispatcher (single & fused)
+        ├── _base.py      # Spark-specific evaluator base classes
+        ├── _single.py    # Single-DataFrame assertions (all/any/none/empty/unique + fused)
         ├── _multi_agg.py # Multi-DataFrame aggregation assertions
         ├── _dual_join.py # Dual-DataFrame join assertions
-        └── _util.py      # Utility functions
+        └── _util.py      # Utility functions (field resolution, type checkers)
 ```
+
+### Assertion Evaluator Pipeline
+
+Assertion evaluation follows a **stepwise pattern**:
+
+1. **validate** — check prerequisites (DataFrame count, column types)
+2. **prepare** — transform assertion into execution context
+3. **build** — construct the query plan (Spark Column expressions)
+4. **execute** — run the plan against DataFrame(s)
+5. **finalize** — convert execution results into `AssertionResult` (pass/fail)
+
+This pipeline is defined in `evaluators/base.py` via `StepwiseAssertionMixin`, and implemented by all Spark evaluators. Assertions of the same type are automatically **fused** (batched) by `optimizer.py` for efficiency.
 
 ### Assertion Types
 

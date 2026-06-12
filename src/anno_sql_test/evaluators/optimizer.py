@@ -1,3 +1,5 @@
+import logging
+
 from anno_sql_test.models import (
     Assertion,
     DualJoinAssertion,
@@ -5,6 +7,8 @@ from anno_sql_test.models import (
     MultiAggAssertion,
     SingleAssertAll,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 def group_as_fused(assertions: list[Assertion]) -> list[FusedAssertion[Assertion]]:
@@ -26,10 +30,13 @@ def group_as_fused(assertions: list[Assertion]) -> list[FusedAssertion[Assertion
 
     result: list[FusedAssertion[Assertion]] = []
     if single:
+        _logger.debug("Fused %d SingleAssertAll assertions", len(single))
         result.append(FusedAssertion(assertions=single))
     if multi:
+        _logger.debug("Fused %d MultiAggAssertion assertions", len(multi))
         result.append(FusedAssertion(assertions=multi))
-    for group in by_keys.values():
+    for keys, group in by_keys.items():
+        _logger.debug("Fused %d DualJoinAssertion assertions (keys=%s)", len(group), keys)
         result.append(FusedAssertion(assertions=group))
     for a in others:
         result.append(FusedAssertion(assertions=[a]))

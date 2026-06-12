@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 
 from pyspark.sql import DataFrame
@@ -47,35 +48,35 @@ class SparkRunner(BaseRunner):
         return SqlTestSuiteResult(suite=suite, non_test_errors=non_test_errors, results=results)
 
     def _handle_non_test_block(self, block: SqlNonTestBlock) -> list[str]:
-        """Execute all SQL statements in a non-test block and return error messages."""
         errors = []
         for sql in block.sql_statements:
             try:
+                logging.debug("Executing non-test SQL: %s", sql[:80])
                 self._spark.sql(sql)
             except Exception as e:
+                logging.warning("Non-test SQL error: %s", e)
                 errors.append(f"Non-test SQL error: {e}")
         return errors
 
     def _should_skip(self, case: SqlTestCase, name_to_result: dict) -> tuple[bool, str]:
-        """Check if a test case should be skipped due to failing dependencies."""
         for dep in case.dependencies:
             dep_result = name_to_result.get(dep)
             if dep_result is not None and not dep_result.passed:
+                logging.info("Skipping '%s': dependency '%s' failed", case.name, dep)
                 return True, f"dependency '{dep}' failed"
         return False, ""
 
     def _execute_sql_statements(self, case: SqlTestCase) -> tuple[list[DataFrame], SqlTestResult | None]:
-        """
-        Execute all SQL statements for a test case.
-        Returns (dataframes, None) on success, or (None, error_result) on failure.
-        """
         dataframes = []
         try:
-            for sql in case.sql_statements:
+            for i, sql in enumerate(case.sql_statements):
+                logging.debug("Executing SQL statement %d for '%s': %s", i + 1, case.name, sql[:80])
                 df = self._spark.sql(sql)
                 dataframes.append(df)
+            logging.debug("Successfully executed %d SQL statements for '%s'", len(dataframes), case.name)
             return dataframes, None
         except Exception as e:
+            logging.warning("SQL execution failed for '%s': %s", case.name, e)
             error_result = SqlTestResult(
                 case=case,
                 passed=False,
@@ -90,7 +91,7 @@ class SparkRunner(BaseRunner):
             return [], error_result
 
     def _evaluate_assertions(self, case: SqlTestCase, dataframes: list[DataFrame]) -> list[AssertionResult]:
-        """Evaluate all assertions of a test case. Returns (assertion_results, all_passed)."""
+        logging.debug("Evaluating %d assertions for '%s'", len(case.assertions), case.name)
         if isinstance(self._evaluator, SparkFusedAssertionEvaluator):
             fused_assertions = group_as_fused(case.assertions)
             result = []
@@ -113,13 +114,7 @@ class SparkRunner(BaseRunner):
         return assertion_results
 
     def _process_test_case(self, case: SqlTestCase, name_to_result: dict) -> SqlTestResult:
-        """
-        Process a single test case:
-        1. Dependency check
-        2. SQL execution
-        3. Assertion evaluation
-        """
-        # 1. Check dependencies
+        logging.info("Running test: %s", case.name)
         skip, skip_reason = self._should_skip(case, name_to_result)
         if skip:
             return SqlTestResult(case=case, passed=False, skipped=True, skip_reason=skip_reason)

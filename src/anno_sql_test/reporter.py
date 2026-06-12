@@ -1,3 +1,4 @@
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -86,7 +87,7 @@ class XlsxReporter(BaseReporter):
         try:
             from openpyxl import Workbook
         except ImportError:
-            print("openpyxl is required for XLSX output. Install with: pip install openpyxl")
+            logging.error("openpyxl is required for XLSX output. Install with: pip install openpyxl")
             return 1
 
         wb = Workbook()

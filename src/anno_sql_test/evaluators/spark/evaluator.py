@@ -1,11 +1,9 @@
+import logging
 from typing import cast
 
 from pyspark.sql import DataFrame
 
-from anno_sql_test.evaluators.base import (
-    BaseFusedAssertionEvaluator,
-    SimpleFusedAssertionEvaluator,
-)
+from anno_sql_test.evaluators.base import BaseFusedAssertionEvaluator, SimpleFusedAssertionEvaluator
 from anno_sql_test.evaluators.spark._base import (
     BaseSparkEvaluator,
     BaseSparkFusedEvaluator,
@@ -54,6 +52,8 @@ from anno_sql_test.models import (
     SingleAssertUnique,
 )
 
+_logger = logging.getLogger(__name__)
+
 
 class SparkAssertionEvaluator(BaseSparkEvaluator[Assertion]):
     def __init__(self):
@@ -81,7 +81,9 @@ class SparkAssertionEvaluator(BaseSparkEvaluator[Assertion]):
     def evaluate(self, assertion: Assertion, dataframes: list[DataFrame]) -> AssertionResult:
         handler = self._handlers.get(type(assertion))
         if handler:
+            _logger.debug("Dispatch %s -> %s", type(assertion).__name__, type(handler).__name__)
             return handler.evaluate(assertion, dataframes)
+        _logger.warning("No handler for assertion type: %s", type(assertion).__name__)
         return AssertionResult(assertion=assertion, passed=False, message="Unknown assertion type")
 
 
@@ -103,7 +105,11 @@ class SparkFusedAssertionEvaluator(BaseSparkFusedEvaluator[Assertion]):
 
     def evaluate(self, assertion: FusedAssertion[Assertion], dataframes: list[DataFrame]) -> list[AssertionResult]:
         first_type = type(assertion.assertions[0])
+        n = len(assertion.assertions)
         if first_type in self._handlers:
+            handler_name = type(self._handlers[first_type]).__name__
+            _logger.debug("Fused evaluate %d x %s -> %s", n, first_type.__name__, handler_name)
             return self._handlers[first_type].evaluate(assertion, dataframes)
         else:
+            _logger.debug("Fused fallback for %d x %s", n, first_type.__name__)
             return self._fallback.evaluate(assertion, dataframes)

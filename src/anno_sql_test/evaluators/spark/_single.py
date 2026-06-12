@@ -46,7 +46,9 @@ class BaseSingleDataFrameEvaluator[T: SingleAssertion](
 
     def validate(self, assertion: T, dataframes: list[DataFrame]) -> list[tuple[str, Assertion]]:
         if not dataframes:
+            self.logger.warning("No DataFrames provided for %s", type(assertion).__name__)
             return [("No DataFrames provided", assertion)]
+        self.logger.debug("%s validated, %d DataFrame(s)", type(assertion).__name__, len(dataframes))
         return []
 
     @classmethod
@@ -261,6 +263,7 @@ class SinglePredicateFusedAssertionEvaluator(
     def prepare(
         self, assertion: FusedAssertion[SingleAssertion], dataframes: list[DataFrame],
     ) -> list[SingleAssertContext]:
+        self.logger.debug("Preparing %d SingleAssertion assertions", len(assertion.assertions))
         prepared = BaseSingleDataFrameEvaluator.prepare_shared(dataframes)
         return [
             replace_field(prepared, namespace=f"asrt{i}")

@@ -44,9 +44,9 @@ _NON_WORD = re.compile(r"\W")
 _IS_GLOB = re.compile(r'^[\w.*]+$')
 _TYPE_PREFIX_MAP = MappingProxyType({
     'numeric': NumericType,
-    'number': NumericType,       # 别名
+    'number': NumericType,
     'string': StringType,
-    'temporal': _TEMPORAL_TYPES,  # 元组 isinstance 同样兼容
+    'temporal': _TEMPORAL_TYPES,
 })
 
 
