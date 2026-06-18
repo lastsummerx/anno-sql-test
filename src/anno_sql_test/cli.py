@@ -2,16 +2,13 @@ import argparse
 import logging
 import sys
 from dataclasses import dataclass, field
+from importlib.metadata import version
 from pathlib import Path
 
 from anno_sql_test.discover import discover_sql_files
 from anno_sql_test.log import setup_logging
 from anno_sql_test.parser import parse_suite
-from anno_sql_test.reporter import (
-    ConsoleReporter,
-    TxtReporter,
-    XlsxReporter,
-)
+from anno_sql_test.reporter import REPORTER_DICT, ConsoleReporter
 
 
 @dataclass
@@ -53,16 +50,18 @@ class SparkConfig(BaseConfig):
 
 
 def create_parser():
+    support_reporter = ",".join(REPORTER_DICT.keys())
     parent_parser = argparse.ArgumentParser(add_help=False)
     parent_parser.add_argument("--pattern", default="*.sql", help="File glob pattern (default: *.sql)")
     parent_parser.add_argument("--report-type", default="console",
-                              help="Output report type(s): xlsx,txt,console (comma-separated, default: console)")
+                              help=f"Output report type(s): {support_reporter} (comma-separated, default: console)")
     parent_parser.add_argument("--var", action="append",
                               help="Variable key=value (can be repeated)")
     parent_parser.add_argument("-v", "--verbose", action="count", default=0,
                               help="Increase verbosity (-v: INFO, -vv: DEBUG)")
 
     parser = argparse.ArgumentParser(prog="anno-sql-test", description="PySpark SQL unit testing framework")
+    parser.add_argument("--version", action="version", version=f"anno-sql-test {version('anno_sql_test')}")
     subparsers = parser.add_subparsers(dest="backend", required=True, help="Backend to use")
 
     spark_parser = subparsers.add_parser("spark", parents=[parent_parser])
@@ -103,16 +102,11 @@ def main(args=None):
     files = discover_sql_files(Path(parsed.path), parsed.pattern)
     suites = parse_suite(files, config.variables)
 
-    reporter_dict = {
-        "console": ConsoleReporter,
-        "xlsx": XlsxReporter,
-        "txt": TxtReporter,
-    }
     report_types = (t.strip().lower() for t in parsed.report_type.split(","))
     reporters = [
-        reporter_dict[rt]()
+        REPORTER_DICT[rt]()
         for rt in report_types
-        if rt in reporter_dict
+        if rt in REPORTER_DICT
     ]
     if not reporters:
         reporters.append(ConsoleReporter())

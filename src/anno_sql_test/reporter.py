@@ -2,6 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
+from xml.etree.ElementTree import Element, SubElement, tostring
 
 from anno_sql_test.models import SqlTestSuiteResult
 
@@ -123,3 +124,51 @@ class TxtReporter(BaseReporter):
 
         print(f"Report saved to {self.output_path}")
         return 1 if report.failed else 0
+
+
+class JunitXmlReporter(BaseReporter):
+    XML_HEADER = b'<?xml version="1.0" encoding="UTF-8"?>\n'
+
+    def __init__(self, output_path: str = "test_report.xml"):
+        self.output_path = output_path
+
+    def report(self, result: SqlTestSuiteResult) -> int:
+        counts = _count_results(result)
+        testsuite = Element("testsuite")
+        testsuite.set("name", str(result.suite.path))
+        testsuite.set("tests", str(len(result.results)))
+        testsuite.set("failures", str(counts.failed))
+        testsuite.set("errors", "0")
+        testsuite.set("skipped", str(counts.skipped))
+
+        for tr in result.results:
+            tc = SubElement(testsuite, "testcase")
+            tc.set("name", tr.case.name)
+            tc.set("classname", str(result.suite.path))
+
+            if tr.skipped:
+                skipped = SubElement(tc, "skipped")
+                if tr.skip_reason:
+                    skipped.set("message", tr.skip_reason)
+            elif not tr.passed:
+                for ar in tr.assertion_results:
+                    if not ar.passed:
+                        failure = SubElement(tc, "failure")
+                        failure.set("message", ar.message)
+                        failure.set("type", "AssertionError")
+
+        xml = self.XML_HEADER + tostring(testsuite, encoding="unicode").encode("utf-8")
+
+        with Path(self.output_path).open("wb") as f:
+            f.write(xml)
+
+        print(f"Report saved to {self.output_path}")
+        return 1 if counts.failed else 0
+
+
+REPORTER_DICT: dict[str, type[BaseReporter]] = {
+    "console": ConsoleReporter,
+    "xlsx": XlsxReporter,
+    "txt": TxtReporter,
+    "junitxml": JunitXmlReporter,
+}

@@ -21,6 +21,7 @@ from anno_sql_test.parser.keywords import (
 
 _HINT_PREFIX_RE = re.compile(r"--\s*@")
 _HINT_RE = re.compile(r"--\s*@(\w+)(?:\s+(.*))?\s*$", re.IGNORECASE)
+_BLOCK_KEYWORDS = (TestKeyword, NonTestKeyword)
 
 
 def _parse_sql_lines(sql_lines: list[str]) -> list[str]:
@@ -128,7 +129,7 @@ class _Parser:
             m = self._match_hint(line)
             if m:
                 kw = _KEYWORD_MAP.get(m.group(1).lower())
-                if isinstance(kw, (TestKeyword, NonTestKeyword)):
+                if isinstance(kw, _BLOCK_KEYWORDS):
                     break
                 if isinstance(kw, VarKeyword):
                     if sql_buf:
@@ -224,7 +225,7 @@ class _Parser:
                 continue
 
             kw = _KEYWORD_MAP.get(m.group(1).lower())
-            if isinstance(kw, (TestKeyword, NonTestKeyword)):
+            if isinstance(kw, _BLOCK_KEYWORDS):
                 break
             if not isinstance(kw, (AssertKeyword, DependencyKeyword)):
                 if re.match(_HINT_PREFIX_RE, stripped):
@@ -255,7 +256,7 @@ class _Parser:
                 m = self._match_hint(line)
                 if m:
                     kw = _KEYWORD_MAP.get(m.group(1).lower())
-                    if isinstance(kw, (TestKeyword, NonTestKeyword)):
+                    if isinstance(kw, _BLOCK_KEYWORDS):
                         break
             sql_buf.append(line)
             self._advance()
