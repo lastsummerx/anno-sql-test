@@ -28,6 +28,26 @@ class TextReport:
     skipped: int = 0
 
 
+def _format_duration(seconds: float) -> str:
+    if not seconds:
+        return ""
+    if seconds < 1:
+        return f"{seconds:.3f}s"
+    if seconds < 60:
+        return f"{seconds:.3f}s"
+    parts: list[str] = []
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}min")
+    if secs or not parts:
+        parts.append(f"{secs}s")
+    return "".join(parts)
+
+
 def _count_results(result: SqlTestSuiteResult) -> SqlTestCounts:
     counts = SqlTestCounts()
     for tr in result.results:
@@ -47,18 +67,19 @@ def _format_text_report(result: SqlTestSuiteResult) -> TextReport:
         report.lines.append(f"  WARN  {err}")
 
     for tr in result.results:
-        duration_str = f" ({tr.duration:.3f}s)" if tr.duration else ""
+        duration_str = _format_duration(tr.duration)
+        duration_tag = f" ({duration_str})" if duration_str else ""
         if tr.skipped:
             report.skipped += 1
             reason = f" ({tr.skip_reason})" if tr.skip_reason else ""
-            report.lines.append(f"  SKIP  {tr.case.name}{reason}{duration_str}")
+            report.lines.append(f"  SKIP  {tr.case.name}{reason}{duration_tag}")
             continue
         if tr.passed:
             report.passed += 1
-            report.lines.append(f"  PASS  {tr.case.name}{duration_str}")
+            report.lines.append(f"  PASS  {tr.case.name}{duration_tag}")
         else:
             report.failed += 1
-            report.lines.append(f"  FAIL  {tr.case.name}{duration_str}")
+            report.lines.append(f"  FAIL  {tr.case.name}{duration_tag}")
             for ar in tr.assertion_results:
                 if not ar.passed:
                     report.lines.append(f"         {ar.message}")
@@ -68,8 +89,9 @@ def _format_text_report(result: SqlTestSuiteResult) -> TextReport:
         summary_parts.append(f"{report.failed} failed")
     if report.skipped:
         summary_parts.append(f"{report.skipped} skipped")
-    duration_str = f", {result.duration:.3f}s" if result.duration else ""
-    report.lines.append(f"\n{', '.join(summary_parts)}{duration_str} in {result.suite.path}")
+    duration_str = _format_duration(result.duration)
+    duration_tag = f", {duration_str}" if duration_str else ""
+    report.lines.append(f"\n{', '.join(summary_parts)}{duration_tag} in {result.suite.path}")
 
     return report
 
@@ -102,18 +124,19 @@ class XlsxReporter(BaseReporter):
         wb = Workbook()
         ws = wb.active
         ws.title = "Test Results"
-        ws.append(["Suite", "Test Name", "Status", "Message", "Duration (s)"])
+        ws.append(["Suite", "Test Name", "Status", "Duration", "Message"])
 
         any_failed = 0
         for result in results:
             for tr in result.results:
+                duration_str = _format_duration(tr.duration)
                 if tr.skipped:
-                    ws.append([str(result.suite.path), tr.case.name, "SKIP", tr.skip_reason or "", tr.duration])
+                    ws.append([str(result.suite.path), tr.case.name, "SKIP", duration_str, tr.skip_reason or ""])
                 elif tr.passed:
-                    ws.append([str(result.suite.path), tr.case.name, "PASS", "", tr.duration])
+                    ws.append([str(result.suite.path), tr.case.name, "PASS", duration_str, ""])
                 else:
                     messages = "; ".join(ar.message for ar in tr.assertion_results if not ar.passed)
-                    ws.append([str(result.suite.path), tr.case.name, "FAIL", messages, tr.duration])
+                    ws.append([str(result.suite.path), tr.case.name, "FAIL", duration_str, messages])
                     any_failed = 1
 
         wb.save(self.output_path)
