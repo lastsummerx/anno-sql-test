@@ -17,6 +17,7 @@ class BaseConfig:
     path: str                     # SQL file or directory path
     pattern: str = "*.sql"        # File glob pattern
     report_type: str = "console"  # Report type (comma-separated)
+    output: str | None = None     # Report filename without extension
     variables: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -43,6 +44,7 @@ class SparkConfig(BaseConfig):
             path=args.path,
             pattern=args.pattern,
             report_type=args.report_type,
+            output=args.output,
             master=args.master,
             conf=[tuple(c.split("=", 1)) for c in conf],
             variables=variables,
@@ -55,6 +57,8 @@ def create_parser():
     parent_parser.add_argument("--pattern", default="*.sql", help="File glob pattern (default: *.sql)")
     parent_parser.add_argument("--report-type", default="console",
                               help=f"Output report type(s): {support_reporter} (comma-separated, default: console)")
+    parent_parser.add_argument("-o", "--output",
+                              help="Report filename without extension (e.g. --output result => result.txt, result.xml)")
     parent_parser.add_argument("--var", action="append",
                               help="Variable key=value (can be repeated)")
     parent_parser.add_argument("-v", "--verbose", action="count", default=0,
@@ -102,21 +106,28 @@ def main(args=None):
     files = discover_sql_files(Path(parsed.path), parsed.pattern)
     suites = parse_suite(files, config.variables)
 
+    EXTENSIONS = {"xlsx": ".xlsx", "txt": ".txt", "junitxml": ".xml"}
     report_types = (t.strip().lower() for t in parsed.report_type.split(","))
-    reporters = [
-        REPORTER_DICT[rt]()
-        for rt in report_types
-        if rt in REPORTER_DICT
-    ]
+    reporters = []
+    for rt in report_types:
+        cls = REPORTER_DICT.get(rt)
+        if cls is None:
+            continue
+        if rt == "console":
+            reporters.append(cls())
+        elif config.output:
+            ext = EXTENSIONS.get(rt, "")
+            reporters.append(cls(output_path=f"{config.output}{ext}"))
+        else:
+            reporters.append(cls())
     if not reporters:
         reporters.append(ConsoleReporter())
 
+    results = [runner.run(suite) for suite in suites]
+
     exit_code = 0
-    for suite in suites:
-        result = runner.run(suite)
-        for reporter in reporters:
-            ec = reporter.report(result)
-            if ec:
-                exit_code = ec
-        print()
+    for reporter in reporters:
+        ec = reporter.report(results)
+        if ec:
+            exit_code = ec
     return exit_code

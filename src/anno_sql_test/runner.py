@@ -1,4 +1,5 @@
 import logging
+import time
 from abc import ABC, abstractmethod
 
 from pyspark.sql import DataFrame
@@ -31,21 +32,24 @@ class SparkRunner(BaseRunner):
         self._evaluator = evaluator or SparkFusedAssertionEvaluator()
 
     def run(self, suite: SqlTestSuite) -> SqlTestSuiteResult:
+        start_time = time.time()
         name_to_result: dict = {}
         results: list[SqlTestResult] = []
         non_test_errors: list[str] = []
 
         for block in suite.blocks:
             if isinstance(block, SqlNonTestBlock):
-                # Collect errors from non-test SQL blocks
                 non_test_errors.extend(self._handle_non_test_block(block))
             else:
-                # Process each test case
                 result = self._process_test_case(block, name_to_result)
                 name_to_result[result.case.name] = result
                 results.append(result)
 
-        return SqlTestSuiteResult(suite=suite, non_test_errors=non_test_errors, results=results)
+        duration = time.time() - start_time
+        return SqlTestSuiteResult(
+            suite=suite, non_test_errors=non_test_errors, results=results,
+            start_time=start_time, duration=duration,
+        )
 
     def _handle_non_test_block(self, block: SqlNonTestBlock) -> list[str]:
         errors = []
@@ -115,6 +119,7 @@ class SparkRunner(BaseRunner):
 
     def _process_test_case(self, case: SqlTestCase, name_to_result: dict) -> SqlTestResult:
         logging.info("Running test: %s", case.name)
+        start_time = time.time()
         skip, skip_reason = self._should_skip(case, name_to_result)
         if skip:
             return SqlTestResult(case=case, passed=False, skipped=True, skip_reason=skip_reason)
@@ -122,9 +127,11 @@ class SparkRunner(BaseRunner):
         # 2. Execute SQL statements
         dataframes, sql_error_result = self._execute_sql_statements(case)
         if sql_error_result is not None:
+            sql_error_result.duration = time.time() - start_time
             return sql_error_result
 
         # 3. Evaluate assertions
         assertion_results = self._evaluate_assertions(case, dataframes)
         all_passed = all(ar.passed for ar in assertion_results)
-        return SqlTestResult(case=case, passed=all_passed, assertion_results=assertion_results)
+        duration = time.time() - start_time
+        return SqlTestResult(case=case, passed=all_passed, assertion_results=assertion_results, duration=duration)

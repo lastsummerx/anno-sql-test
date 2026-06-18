@@ -133,6 +133,7 @@ class SqlTestResult:
     skipped: bool = False
     skip_reason: str = ""
     assertion_results: list[AssertionResult] = field(default_factory=list)
+    duration: float = 0.0
 
 
 @dataclass
@@ -150,3 +151,5 @@ class SqlTestSuiteResult:
     suite: SqlTestSuite
     non_test_errors: list[str] = field(default_factory=list)
     results: list[SqlTestResult] = field(default_factory=list)
+    start_time: float = 0.0
+    duration: float = 0.0
