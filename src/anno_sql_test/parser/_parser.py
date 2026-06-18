@@ -1,34 +1,33 @@
 import re
+import string
 from pathlib import Path
 
 from anno_sql_test.errors import ParseError
-from anno_sql_test.keywords import _KEYWORD_MAP, DependencyKeyword
-from anno_sql_test.models import SqlNonTestBlock, SqlTestCase, SqlTestSuite
-from anno_sql_test.parser._tokenizer import _parse_sql_lines
+from anno_sql_test.models import (
+    Assertion,
+    SqlNonTestBlock,
+    SqlTestCase,
+    SqlTestSuite,
+)
+from anno_sql_test.parser.keywords import (
+    _KEYWORD_MAP,
+    AssertKeyword,
+    DependencyKeyword,
+    NonTestKeyword,
+    ParseInput,
+    TestKeyword,
+    VarKeyword,
+)
 
+_HINT_PREFIX_RE = re.compile(r"--\s*@")
 _HINT_RE = re.compile(r"--\s*@(\w+)(?:\s+(.*))?\s*$", re.IGNORECASE)
-TEST_PATTERN = re.compile(r"--\s*@test(?:\s+(?P<name>.*))?\s*$", re.IGNORECASE)
-NON_TEST_PATTERN = re.compile(r"--\s*@non_test\s*$", re.IGNORECASE)
 
 
-def _parse_hints(case: SqlTestCase, hints: list[str]):
-    for line in hints:
-        stripped = line.strip()
-        m = _HINT_RE.match(stripped)
-        if m:
-            name = m.group(1)
-            rest = m.group(2) or ""
-            kw = _KEYWORD_MAP.get(name)
-            if kw is None:
-                raise ParseError(f"Unknown assertion hint at line: {line}")
-            if isinstance(kw, DependencyKeyword):
-                if rest:
-                    case.dependencies.extend(rest.split())
-            else:
-                case.assertions.append(kw.build(rest, line))
-        else:
-            if stripped.startswith("-- @"):
-                raise ParseError(f"Unknown assertion hint at line: {line}")
+def _parse_sql_lines(sql_lines: list[str]) -> list[str]:
+    raw = "\n".join(sql_lines).strip()
+    if not raw:
+        return []
+    return [s.strip() for s in raw.split(";") if s.strip()]
 
 
 def _validate(suite: SqlTestSuite):
@@ -44,117 +43,229 @@ def _validate(suite: SqlTestSuite):
                 raise ParseError(f"Dependency '{dep}' not found in {suite.path}")
 
 
-def _parse_sql(obj: SqlTestCase | SqlNonTestBlock, sql_lines: list[str]):
-    statements = _parse_sql_lines(sql_lines)
-    obj.sql_statements = statements
+def _resolve_variables(variables: dict[str, str]) -> dict[str, str]:
+    pending = dict(variables)
+    resolved: dict[str, str] = {}
+    while pending:
+        before = len(pending)
+        for name, value in list(pending.items()):
+            try:
+                resolved[name] = string.Template(value).substitute(resolved)
+                del pending[name]
+            except KeyError:
+                pass
+        if len(pending) == before:
+            unresolved = ", ".join(f"{k}={v}" for k, v in pending.items())
+            raise ParseError(f"Circular or unresolved variable references: {unresolved}")
+    return resolved
 
 
-def _extract_auto_sql_lines(lines: list[str]) -> tuple[list[str], int]:
-    auto_lines = []
-    i = 0
-    n = len(lines)
-    while i < n:
-        line = lines[i]
-        stripped = line.strip()
-        if not stripped:
-            i += 1
-            continue
-        if stripped.startswith("--"):
-            if TEST_PATTERN.match(stripped) or NON_TEST_PATTERN.match(stripped):
+def _substitute_variables(sql: str, variables: dict[str, str]) -> str:
+    try:
+        return string.Template(sql).substitute(variables)
+    except KeyError as e:
+        raise ParseError(f"Undefined variable {e} in SQL: {sql[:80]}") from e
+
+
+def _substitute_all(texts: list[str], variables: dict[str, str]) -> list[str]:
+    return [_substitute_variables(t, variables) for t in texts]
+
+
+class _Parser:
+    def __init__(self, lines: list[str], filepath: Path, cli_variables: dict[str, str] | None = None):
+        self._lines = lines
+        self._filepath = filepath
+        self._cli_variables = cli_variables or {}
+        self._pos = 0
+
+    def _peek(self) -> str:
+        return "" if self._pos >= len(self._lines) else self._lines[self._pos]
+
+    def _advance(self) -> str:
+        line = self._lines[self._pos]
+        self._pos += 1
+        return line
+
+    def _current_line_no(self) -> int:
+        return self._pos + 1
+
+    def _is_eof(self) -> bool:
+        return self._pos >= len(self._lines)
+
+    @staticmethod
+    def _match_hint(line: str) -> re.Match | None:
+        return _HINT_RE.match(line.strip())
+
+    def parse(self) -> SqlTestSuite:
+        suite = SqlTestSuite(path=self._filepath)
+        file_vars, auto_sql_texts = self._parse_preamble()
+        variables = _resolve_variables({**file_vars, **self._cli_variables})
+        for sql_text in auto_sql_texts:
+            statements = _parse_sql_lines([sql_text])
+            statements = _substitute_all(statements, variables)
+            if statements:
+                suite.blocks.append(SqlNonTestBlock(sql_statements=statements))
+        self._parse_blocks(suite, variables)
+        _validate(suite)
+        return suite
+
+    def _parse_preamble(self) -> tuple[dict[str, str], list[str]]:
+        file_vars: dict[str, str] = {}
+        auto_sql_texts: list[str] = []
+        sql_buf: list[str] = []
+
+        while not self._is_eof():
+            line = self._peek()
+            stripped = line.strip()
+            if not stripped:
+                self._advance()
+                continue
+            if not stripped.startswith("--"):
+                sql_buf.append(line)
+                self._advance()
+                continue
+
+            m = self._match_hint(line)
+            if m:
+                kw = _KEYWORD_MAP.get(m.group(1).lower())
+                if isinstance(kw, (TestKeyword, NonTestKeyword)):
+                    break
+                if isinstance(kw, VarKeyword):
+                    if sql_buf:
+                        auto_sql_texts.append("\n".join(sql_buf))
+                        sql_buf = []
+                    pi = ParseInput(
+                        rest=m.group(2) or "",
+                        source=line,
+                        start_line=self._current_line_no(),
+                        end_line=self._current_line_no(),
+                    )
+                    name, value = kw.build(pi)
+                    file_vars[name] = value
+            self._advance()
+
+        if sql_buf:
+            auto_sql_texts.append("\n".join(sql_buf))
+        return file_vars, auto_sql_texts
+
+    def _parse_blocks(self, suite: SqlTestSuite, variables: dict[str, str]):
+        while not self._is_eof():
+            line = self._peek()
+            stripped = line.strip()
+            if not stripped:
+                self._advance()
+                continue
+            if not stripped.startswith("--"):
+                self._advance()
+                continue
+            m = self._match_hint(line)
+            if not m:
+                self._advance()
+                continue
+            kw = _KEYWORD_MAP.get(m.group(1).lower())
+            if isinstance(kw, TestKeyword):
+                suite.blocks.append(self._parse_test_block(variables))
+            elif isinstance(kw, NonTestKeyword):
+                block = self._parse_non_test_block(variables)
+                if block is not None:
+                    suite.blocks.append(block)
+            else:
+                self._advance()
+
+    def _parse_test_block(self, variables: dict[str, str]) -> SqlTestCase:
+        line = self._advance()
+        m = self._match_hint(line)
+        kw = _KEYWORD_MAP.get(m.group(1).lower()) if m else None
+        if not isinstance(kw, TestKeyword) or not m:
+            raise ParseError(f"Empty test name at line {self._current_line_no() - 1}")
+
+        pi = ParseInput(
+            rest=m.group(2) or "",
+            source=line,
+            start_line=self._current_line_no() - 1,
+            end_line=self._current_line_no() - 1,
+        )
+        case = SqlTestCase(name=kw.build(pi))
+        dependencies, assertions = self._parse_hints()
+        case.dependencies = dependencies
+        case.assertions = assertions
+
+        sql_text = self._consume_sql_block()
+        if sql_text:
+            case.sql_statements = _substitute_all(_parse_sql_lines([sql_text]), variables)
+
+        return case
+
+    def _parse_non_test_block(self, variables: dict[str, str]) -> SqlNonTestBlock | None:
+        self._advance()
+        sql_text = self._consume_sql_block()
+        if not sql_text:
+            return None
+        statements = _substitute_all(_parse_sql_lines([sql_text]), variables)
+        return SqlNonTestBlock(sql_statements=statements) if statements else None
+
+    def _parse_hints(self) -> tuple[list[str], list[Assertion]]:
+        dependencies: list[str] = []
+        assertions: list[Assertion] = []
+
+        while not self._is_eof():
+            line = self._peek()
+            stripped = line.strip()
+            if not stripped:
                 break
-            i += 1
-            continue
-        auto_lines.append(line)
-        i += 1
-    return auto_lines, i
+            if not stripped.startswith("--"):
+                break
+
+            m = self._match_hint(line)
+            if not m:
+                if re.match(_HINT_PREFIX_RE, stripped):
+                    raise ParseError(f"Unknown assertion hint at line {self._current_line_no()}: {line}")
+                self._advance()
+                continue
+
+            kw = _KEYWORD_MAP.get(m.group(1).lower())
+            if isinstance(kw, (TestKeyword, NonTestKeyword)):
+                break
+            if not isinstance(kw, (AssertKeyword, DependencyKeyword)):
+                if re.match(_HINT_PREFIX_RE, stripped):
+                    raise ParseError(f"Unknown assertion hint at line {self._current_line_no()}: {line}")
+                self._advance()
+                continue
+
+            pi = ParseInput(
+                rest=m.group(2) or "",
+                source=line,
+                start_line=self._current_line_no(),
+                end_line=self._current_line_no(),
+            )
+            if isinstance(kw, DependencyKeyword):
+                dependencies.extend(kw.build(pi))
+            else:
+                assertions.append(kw.build(pi))
+            self._advance()
+
+        return dependencies, assertions
+
+    def _consume_sql_block(self) -> str:
+        sql_buf: list[str] = []
+        while not self._is_eof():
+            line = self._peek()
+            stripped = line.strip()
+            if stripped.startswith("--"):
+                m = self._match_hint(line)
+                if m:
+                    kw = _KEYWORD_MAP.get(m.group(1).lower())
+                    if isinstance(kw, (TestKeyword, NonTestKeyword)):
+                        break
+            sql_buf.append(line)
+            self._advance()
+        return "\n".join(sql_buf).strip() if sql_buf else ""
 
 
-def _is_test_annotation(line: str) -> bool:
-    return bool(TEST_PATTERN.match(line))
-
-
-def _is_non_test_annotation(line: str) -> bool:
-    return bool(NON_TEST_PATTERN.match(line))
-
-
-def _parse_test_block(lines: list[str], start_idx: int, filepath: Path) -> tuple[SqlTestCase, int]:
-    line = lines[start_idx].strip()
-    m = TEST_PATTERN.match(line)
-    name = (m.group("name") or "").strip() if m else ""
-    if not name:
-        raise ParseError(f"Empty test name at line {start_idx + 1} in {filepath}")
-
-    case = SqlTestCase(name=name)
-    idx = start_idx + 1
-    hint_lines = []
-    sql_lines = []
-    in_hints = True
-
-    while idx < len(lines):
-        cline = lines[idx]
-        cstripped = cline.strip()
-        if _is_test_annotation(cstripped) or _is_non_test_annotation(cstripped):
-            break
-        if in_hints and cstripped.startswith("--"):
-            hint_lines.append(cstripped)
-        else:
-            in_hints = False
-            sql_lines.append(cline)
-        idx += 1
-
-    _parse_hints(case, hint_lines)
-    _parse_sql(case, sql_lines)
-    return case, idx
-
-
-def _parse_non_test_block(lines: list[str], start_idx: int) -> tuple[SqlNonTestBlock, int]:
-    idx = start_idx + 1
-    sql_lines = []
-    while idx < len(lines):
-        cline = lines[idx]
-        cstripped = cline.strip()
-        if _is_test_annotation(cstripped) or _is_non_test_annotation(cstripped):
-            break
-        sql_lines.append(cline)
-        idx += 1
-
-    statements = _parse_sql_lines(sql_lines)
-    return SqlNonTestBlock(sql_statements=statements), idx
-
-
-def parse_file(filepath: Path) -> SqlTestSuite:
+def parse_file(filepath: Path, cli_variables: dict[str, str] | None = None) -> SqlTestSuite:
     lines = filepath.read_text(encoding="utf-8").splitlines()
-    suite = SqlTestSuite(path=filepath)
-
-    auto_lines, start_idx = _extract_auto_sql_lines(lines)
-    if auto_lines:
-        statements = _parse_sql_lines(auto_lines)
-        if statements:
-            suite.blocks.append(SqlNonTestBlock(sql_statements=statements))
-
-    idx = start_idx
-    while idx < len(lines):
-        line = lines[idx].strip()
-        if not line:
-            idx += 1
-            continue
-
-        if _is_test_annotation(line):
-            case, idx = _parse_test_block(lines, idx, filepath)
-            suite.blocks.append(case)
-        elif _is_non_test_annotation(line):
-            block, idx = _parse_non_test_block(lines, idx)
-            if block.sql_statements:
-                suite.blocks.append(block)
-        else:
-            idx += 1
-
-    _validate(suite)
-    return suite
+    return _Parser(lines, filepath, cli_variables).parse()
 
 
-def parse_suite(files: list[Path]) -> list[SqlTestSuite]:
-    suites: list[SqlTestSuite] = []
-    for fpath in files:
-        suites.append(parse_file(fpath))
-    return suites
+def parse_suite(files: list[Path], cli_variables: dict[str, str] | None = None) -> list[SqlTestSuite]:
+    return [parse_file(f, cli_variables) for f in files]

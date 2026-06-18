@@ -20,6 +20,7 @@ class BaseConfig:
     path: str                     # SQL file or directory path
     pattern: str = "*.sql"        # File glob pattern
     report_type: str = "console"  # Report type (comma-separated)
+    variables: dict[str, str] = field(default_factory=dict)
 
     @property
     def report_types(self) -> list[str]:
@@ -36,12 +37,18 @@ class SparkConfig(BaseConfig):
     @classmethod
     def from_args(cls, args: argparse.Namespace) -> 'SparkConfig':
         conf = args.conf or []
+        variables = {}
+        if args.var:
+            for v in args.var:
+                key, _, val = v.partition("=")
+                variables[key.strip()] = val.strip()
         return cls(
             path=args.path,
             pattern=args.pattern,
             report_type=args.report_type,
             master=args.master,
             conf=[tuple(c.split("=", 1)) for c in conf],
+            variables=variables,
         )
 
 
@@ -50,6 +57,8 @@ def create_parser():
     parent_parser.add_argument("--pattern", default="*.sql", help="File glob pattern (default: *.sql)")
     parent_parser.add_argument("--report-type", default="console",
                               help="Output report type(s): xlsx,txt,console (comma-separated, default: console)")
+    parent_parser.add_argument("--var", action="append",
+                              help="Variable key=value (can be repeated)")
     parent_parser.add_argument("-v", "--verbose", action="count", default=0,
                               help="Increase verbosity (-v: INFO, -vv: DEBUG)")
 
@@ -92,7 +101,7 @@ def main(args=None):
         return 1
 
     files = discover_sql_files(Path(parsed.path), parsed.pattern)
-    suites = parse_suite(files)
+    suites = parse_suite(files, config.variables)
 
     reporter_dict = {
         "console": ConsoleReporter,
