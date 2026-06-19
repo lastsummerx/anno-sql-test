@@ -45,15 +45,20 @@ uv sync --extra excel
 Create a `.sql` file with annotation comments:
 
 ```sql
+-- @var db=prod
+-- @var tbl=${db}.users
+
+SELECT 1;
+
 -- @test users_active
 -- @assert_all status = 'ACTIVE'
 -- @assert_not_empty
-SELECT id, name, status FROM users WHERE status = 'ACTIVE';
+SELECT id, name, status FROM ${tbl} WHERE status = 'ACTIVE';
 
 -- @test user_count
 -- @assert_agg_equal count *
-SELECT * FROM users;
-SELECT * FROM users WHERE status = 'ACTIVE';
+SELECT * FROM ${tbl};
+SELECT * FROM ${tbl} WHERE status = 'ACTIVE';
 
 -- @test compare_revenue
 -- @dependency users_active
@@ -72,12 +77,14 @@ anno-sql-test spark ./sql_tests/
 anno-sql-test spark example/demo_orders.sql
 
 # Example output
-#   PASS  order_stats
-#   FAIL  order_total
-#          Aggregation mismatch: DF0.sum_amount=250 vs DF1.sum_amount=251
-#   PASS  compare_users
-#
-#   2 passed, 1 failed in example\demo_orders.sql
+#   PASS  order_stats (4.055s)                                                    
+#   FAIL  order_total (0.354s)
+#          Aggregation mismatch: DF0.sum(amount)=250 vs DF1.sum(amount)=251
+#   FAIL  compare_users (2.845s)
+#          Found 1 row(s) (50.0%) with mismatches: total: 1 row(s) (50.0%)
+#          {'user_name': 'alice', 'l.total': 250, 'r.total': 251}
+# 
+# 1 passed, 2 failed, 8.283s in example\demo_orders.sql
 
 # Excel report
 anno-sql-test spark --report-type xlsx ./sql_tests/
@@ -94,6 +101,7 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | --- | --- | --- |
 | `@test` | `<name>` | Start a test case |
 | `@non_test` | — | Start a non-test SQL block (setup / teardown, no assertions) |
+| `@var` | `<name>=<value>` | Define a variable (supports `${other_var}` references) |
 | `@dependency` | `<name1>[, <name2>]` | Declare dependency on other tests in the same file |
 | `@assert_all` | `<predicate>` | All rows must satisfy the predicate |
 | `@assert_any` | `<predicate>` | At least one row must satisfy the predicate |
@@ -122,6 +130,13 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 > `<duration>` uses ISO 8601 format (e.g. `P1DT12H`).
 >
 > **Auto SQL**: Any SQL statements before the first `@test` / `@non_test` annotation are automatically treated as a non-test block (equivalent to `@non_test`).
+>
+> **Variables**:
+> - Define file-level variables with `@var name=value` (must appear before any `@test` / `@non_test`).
+> - Variables can reference each other: `@var db=prod`, `@var tbl=${db}.users`.
+> - Use `${var_name}` syntax for substitution in SQL: `SELECT * FROM ${tbl}`.
+> - Override variables via CLI: `anno-sql-test spark --var db=staging ./sql_tests/` (can be repeated).
+> - CLI variables take precedence over file-level variables.
 
 ---
 
@@ -195,9 +210,9 @@ uv run ruff check
 
 ## Dependencies
 
-- **Runtime**: none (zero extra dependencies)
+- **Runtime**: `pyspark`
 - **Optional**: `openpyxl` (Excel reports)
-- **Dev**: `pyspark`, `pytest`, `ruff`, `ty`
+- **Dev**: `pytest`, `ruff`, `ty`
 
 ---
 

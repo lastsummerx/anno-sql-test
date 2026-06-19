@@ -43,7 +43,7 @@ class TestSinglePredicateFusedAssertionEvaluator:
         results = evaluator.evaluate(fused, [df])
         assert len(results) == 1
         assert results[0].passed is False
-        assert "violating" in results[0].message
+        assert "violated" in results[0].message
 
     def test_multiple_predicates_fused(self):
         df = spark.createDataFrame([(1, 10), (2, 20), (3, 2)], ["a", "b"])
@@ -56,7 +56,7 @@ class TestSinglePredicateFusedAssertionEvaluator:
         assert len(results) == 2
         assert results[0].passed is True
         assert results[1].passed is False
-        assert "violating" in results[1].message
+        assert "violated" in results[1].message
 
     def test_all_predicates_pass(self):
         df = spark.createDataFrame([(1, 10), (2, 20)], ["a", "b"])

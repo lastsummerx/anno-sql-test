@@ -1,11 +1,13 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import replace as replace_field
+from functools import reduce
 from itertools import chain
 from typing import Any
 
 from pyspark.sql import Column, DataFrame, Row
 from pyspark.sql import functions as F
+from pyspark.storagelevel import StorageLevel
 
 from anno_sql_test.evaluators.base import (
     BaseStepwiseAssertionEvaluator,
@@ -15,7 +17,12 @@ from anno_sql_test.evaluators.spark._base import (
     BaseStepwiseSparkEvaluator,
     DelegatingStepwiseSparkFusedEvaluator,
 )
-from anno_sql_test.evaluators.spark._util import NamedColumn, _to_literal_name, resolve_fields
+from anno_sql_test.evaluators.spark._utils import (
+    NamedColumn,
+    _to_literal_name,
+    extract_word_fields,
+    resolve_fields,
+)
 from anno_sql_test.models import (
     Assertion,
     AssertionResult,
@@ -44,6 +51,9 @@ class BaseSingleDataFrameEvaluator[T: SingleAssertion](
 
     TOTAL_COL = "_total"
 
+    def __init__(self, sample_count: int = 0):
+        self._sample_count = sample_count
+
     def validate(self, assertion: T, dataframes: list[DataFrame]) -> list[tuple[str, Assertion]]:
         if not dataframes:
             self.logger.warning("No DataFrames provided for %s", type(assertion).__name__)
@@ -63,10 +73,23 @@ class BaseSingleDataFrameEvaluator[T: SingleAssertion](
         )
 
     def prepare(self, assertion: T, dataframes: list[DataFrame]) -> SingleAssertContext:
-        return self.prepare_shared(dataframes)
+        ctx = self.prepare_shared(dataframes)
+        if self._sample_count > 0:
+            ctx.dataframe.persist(StorageLevel.DISK_ONLY)
+        return ctx
+
+    def cleanup(self, prepared: SingleAssertContext) -> None:
+        if self._sample_count > 0:
+            prepared.dataframe.unpersist()
 
     def execute(self, prepared: SingleAssertContext, plan: list[NamedColumn]) -> Row:
         return prepared.dataframe.agg(prepared.total, *(p.column for p in plan)).collect()[0]
+
+    def _sample_key_columns(self, assertion: T, all_columns: list[str]) -> list[str]:
+        pred = getattr(assertion, 'predicate', None)
+        if pred:
+            return extract_word_fields([pred], all_columns)
+        return []
 
 
 class SingleAssertAllEvaluator(BaseSingleDataFrameEvaluator[SingleAssertAll]):
@@ -90,18 +113,36 @@ class SingleAssertAllEvaluator(BaseSingleDataFrameEvaluator[SingleAssertAll]):
         if not failures:
             return [AssertionResult(assertion=assertion, passed=True)]
         total = exec_result[self.TOTAL_COL]
-        if len(failures) == 1:
-            name, cnt = failures[0]
-            pct = cnt / total * 100
-            return [AssertionResult(
-                assertion=assertion, passed=False,
-                message=f"Found {cnt} row(s) ({pct:.1f}%) violating: {assertion.predicate}",
-            )]
-        details = "; ".join(f"{name}: {cnt} ({cnt/total*100:.1f}%)" for name, cnt in failures)
+        details = "; ".join(
+            f"{name} {cnt} row(s) ({cnt / total * 100:.1f}%) violated"
+            for name, cnt in failures
+        )
         return [AssertionResult(
             assertion=assertion, passed=False,
-            message=f"Found violations: {details}",
+            message=f"Expected all rows to match {assertion.predicate}, but got: {details}",
         )]
+
+    def sample_failure(
+        self, assertion: SingleAssertAll, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
+    ) -> list[dict] | None:
+        if self._sample_count <= 0:
+            return None
+        df = step_result.prepared.dataframe
+        exec_result = step_result.executed
+        plan = step_result.plan
+        predicates = resolve_fields([assertion.predicate], [df])
+        conditions = []
+        for pred, nc in zip(predicates, plan):
+            if exec_result[nc.name] > 0:
+                conditions.append(~F.expr(pred))
+        if not conditions:
+            return None
+        filter_cond = reduce(lambda a, b: a | b, conditions, F.lit(False))
+        key_cols = extract_word_fields([assertion.predicate], df.columns)
+        if not key_cols:
+            key_cols = df.columns
+        rows = df.filter(filter_cond).select(*key_cols).take(self._sample_count)
+        return [row.asDict() for row in rows]
 
 
 class SingleAssertEmptyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertEmpty]):
@@ -118,6 +159,12 @@ class SingleAssertEmptyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertEmpty]
             assertion=assertion, passed=False,
             message=f"DataFrame is not empty, has {count} row(s)",
         )]
+
+    def sample_failure(
+        self, assertion: SingleAssertEmpty, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
+    ) -> Any | None:
+        rows = step_result.prepared.dataframe.tail(self._sample_count)
+        return [row.asDict() for row in rows]
 
 
 class SingleAssertNotEmptyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertNotEmpty]):
@@ -146,15 +193,42 @@ class SingleAssertAnyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertAny]):
         self, assertion: SingleAssertAny, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
     ) -> list[AssertionResult]:
         exec_result = step_result.executed
+        failures = []
         for plan_entry in step_result.plan:
-            matched = exec_result[plan_entry.name]
-            if matched > 0:
-                return [AssertionResult(assertion=assertion, passed=True)]
+            violated = exec_result[plan_entry.name]
+            if violated == 0:
+                failures.append((plan_entry.name, violated))
+        if not failures:
+            return [AssertionResult(assertion=assertion, passed=True)]
         total = exec_result[self.TOTAL_COL]
+        details = "; ".join(
+            f"{name} {cnt} row(s) ({cnt / total * 100:.1f}%) violated"
+            for name, cnt in failures
+        )
         return [AssertionResult(
             assertion=assertion, passed=False,
-            message=f"Expected at least 1 row matching: {assertion.predicate}, but got 0 (total {total} row(s))",
+            message=f"Expected at least 1 row to match {assertion.predicate}, but got: {details}",
         )]
+
+    def sample_failure(
+        self, assertion: SingleAssertAny, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
+    ) -> Any | None:
+        df = step_result.prepared.dataframe
+        exec_result = step_result.executed
+        plan = step_result.plan
+        predicates = resolve_fields([assertion.predicate], [df])
+        conditions = []
+        for pred, nc in zip(predicates, plan):
+            if exec_result[nc.name] == 0:
+                conditions.append(~F.expr(pred))
+        if not conditions:
+            return None
+        filter_cond = reduce(lambda a, b: a | b, conditions, F.lit(False))
+        key_cols = extract_word_fields([assertion.predicate], df.columns)
+        if not key_cols:
+            key_cols = df.columns
+        rows = df.filter(filter_cond).select(*key_cols).take(self._sample_count)
+        return [row.asDict() for row in rows]
 
 
 class SingleAssertNoneEvaluator(BaseSingleDataFrameEvaluator[SingleAssertNone]):
@@ -178,18 +252,36 @@ class SingleAssertNoneEvaluator(BaseSingleDataFrameEvaluator[SingleAssertNone]):
         if not failures:
             return [AssertionResult(assertion=assertion, passed=True)]
         total = exec_result[self.TOTAL_COL]
-        if len(failures) == 1:
-            name, cnt = failures[0]
-            pct = cnt / total * 100
-            return [AssertionResult(
-                assertion=assertion, passed=False,
-                message=f"Found {cnt} row(s) ({pct:.1f}%) matching: {assertion.predicate}, expected 0",
-            )]
-        details = "; ".join(f"{name}: {cnt} ({cnt/total*100:.1f}%)" for name, cnt in failures)
+        details = "; ".join(
+            f"Found {name} {cnt} row(s) ({cnt / total * 100:.1f}%) matching"
+            for name, cnt in failures
+        )
         return [AssertionResult(
             assertion=assertion, passed=False,
-            message=f"Found rows matching: {details}",
+            message=f"Expected 0 rows to match {assertion.predicate}, but got: {details}",
         )]
+
+    def sample_failure(
+        self, assertion: SingleAssertNone, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
+    ) -> list[dict] | None:
+        if self._sample_count <= 0:
+            return None
+        df = step_result.prepared.dataframe
+        exec_result = step_result.executed
+        plan = step_result.plan
+        predicates = resolve_fields([assertion.predicate], [df])
+        conditions = []
+        for pred, nc in zip(predicates, plan):
+            if exec_result[nc.name] > 0:
+                conditions.append(F.expr(pred))
+        if not conditions:
+            return None
+        filter_cond = reduce(lambda a, b: a | b, conditions, F.lit(False))
+        key_cols = extract_word_fields([assertion.predicate], df.columns)
+        if not key_cols:
+            key_cols = df.columns
+        rows = df.filter(filter_cond).select(*key_cols).take(self._sample_count)
+        return [row.asDict() for row in rows]
 
 
 class SingleAssertUniqueEvaluator(
@@ -201,6 +293,9 @@ class SingleAssertUniqueEvaluator(
     DUP_ROWS_COL = "_dup_rows"
     DUP_GROUPS_COL = "_dup_groups"
 
+    def __init__(self, sample_count: int = 0):
+        self._sample_count = sample_count
+
     def validate(self, assertion: SingleAssertUnique, dataframes: list[DataFrame]) -> list[tuple[str, Assertion]]:
         if not dataframes:
             return [("No DataFrames provided", assertion)]
@@ -208,7 +303,14 @@ class SingleAssertUniqueEvaluator(
 
     def prepare(self, assertion: SingleAssertUnique, dataframes: list[DataFrame]) -> DataFrame:
         fields = (F.expr(field) for field in assertion.fields)
-        return dataframes[0].groupBy(*fields).agg(F.count(F.lit(1)).alias(self.COUNT_COL))
+        prepared = dataframes[0].groupBy(*fields).agg(F.count(F.lit(1)).alias(self.COUNT_COL))
+        if self._sample_count > 0:
+            prepared.persist(StorageLevel.DISK_ONLY)
+        return prepared
+
+    def cleanup(self, prepared: DataFrame) -> None:
+        if self._sample_count > 0:
+            prepared.unpersist()
 
     def build(self, assertion: SingleAssertUnique, prepared: DataFrame) -> list[Column]:
         is_dup = F.col(self.COUNT_COL) > 1
@@ -241,17 +343,27 @@ class SingleAssertUniqueEvaluator(
             ),
         )]
 
+    def sample_failure(
+        self, assertion: SingleAssertUnique, step_result: StepResult[DataFrame, list[Column], Row],
+    ) -> list[dict] | None:
+        if self._sample_count <= 0:
+            return None
+        dup_df = step_result.prepared.filter(F.col(self.COUNT_COL) > 1)
+        rows = dup_df.take(self._sample_count)
+        return [row.asDict() for row in rows]
+
 
 class SinglePredicateFusedAssertionEvaluator(
     DelegatingStepwiseSparkFusedEvaluator[SingleAssertion, SingleAssertContext, list[NamedColumn]],
 ):
-    def __init__(self) -> None:
+    def __init__(self, sample_count: int = 0) -> None:
+        self._sample_count = sample_count
         self._assertion_evaluators: dict[type[SingleAssertion], BaseSingleDataFrameEvaluator[Any]] = {
-            SingleAssertAll: SingleAssertAllEvaluator(),
-            SingleAssertAny: SingleAssertAnyEvaluator(),
-            SingleAssertNone: SingleAssertNoneEvaluator(),
-            SingleAssertEmpty: SingleAssertEmptyEvaluator(),
-            SingleAssertNotEmpty: SingleAssertNotEmptyEvaluator(),
+            SingleAssertAll: SingleAssertAllEvaluator(sample_count=sample_count),
+            SingleAssertAny: SingleAssertAnyEvaluator(sample_count=sample_count),
+            SingleAssertNone: SingleAssertNoneEvaluator(sample_count=sample_count),
+            SingleAssertEmpty: SingleAssertEmptyEvaluator(sample_count=sample_count),
+            SingleAssertNotEmpty: SingleAssertNotEmptyEvaluator(sample_count=sample_count),
         }
 
     def get_evaluator_map(self) -> Mapping[
@@ -265,10 +377,16 @@ class SinglePredicateFusedAssertionEvaluator(
     ) -> list[SingleAssertContext]:
         self.logger.debug("Preparing %d SingleAssertion assertions", len(assertion.assertions))
         prepared = BaseSingleDataFrameEvaluator.prepare_shared(dataframes)
+        if self._sample_count > 0:
+            prepared.dataframe.persist(StorageLevel.DISK_ONLY)
         return [
             replace_field(prepared, namespace=f"asrt{i}")
             for i in range(len(assertion.assertions))
         ]
+
+    def cleanup(self, prepared: list[SingleAssertContext]) -> None:
+        if self._sample_count > 0:
+            prepared[0].dataframe.unpersist()
 
     def execute(self, prepared: list[SingleAssertContext], plan: list[list[NamedColumn]]) -> Row:
         df = prepared[0].dataframe

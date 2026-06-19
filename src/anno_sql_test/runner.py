@@ -2,7 +2,7 @@ import logging
 import time
 from abc import ABC, abstractmethod
 
-from pyspark.sql import DataFrame
+from pyspark.sql import DataFrame, SparkSession
 
 from anno_sql_test.evaluators.optimizer import group_as_fused
 from anno_sql_test.evaluators.spark import (
@@ -27,9 +27,9 @@ class BaseRunner(ABC):
 
 
 class SparkRunner(BaseRunner):
-    def __init__(self, spark, evaluator: SparkAssertionEvaluator | None = None):
+    def __init__(self, spark: SparkSession, sample_count: int = 0, evaluator: SparkAssertionEvaluator | None = None):
         self._spark = spark
-        self._evaluator = evaluator or SparkFusedAssertionEvaluator()
+        self._evaluator = evaluator or SparkFusedAssertionEvaluator(sample_count=sample_count)
 
     def run(self, suite: SqlTestSuite) -> SqlTestSuiteResult:
         start_time = time.time()

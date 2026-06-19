@@ -8,7 +8,7 @@ from pathlib import Path
 from anno_sql_test.discover import discover_sql_files
 from anno_sql_test.log import setup_logging
 from anno_sql_test.parser import parse_suite
-from anno_sql_test.reporter import REPORTER_DICT, ConsoleReporter
+from anno_sql_test.reporter import REPORTER_DICT, BaseFileReporter, BaseReporter, ConsoleReporter
 
 
 @dataclass
@@ -19,6 +19,7 @@ class BaseConfig:
     report_type: str = "console"  # Report type (comma-separated)
     output: str | None = None     # Report filename without extension
     variables: dict[str, str] = field(default_factory=dict)
+    sample_count: int = 0
 
     @property
     def report_types(self) -> list[str]:
@@ -48,6 +49,7 @@ class SparkConfig(BaseConfig):
             master=args.master,
             conf=[tuple(c.split("=", 1)) for c in conf],
             variables=variables,
+            sample_count=args.sample_count,
         )
 
 
@@ -63,17 +65,35 @@ def create_parser():
                               help="Variable key=value (can be repeated)")
     parent_parser.add_argument("-v", "--verbose", action="count", default=0,
                               help="Increase verbosity (-v: INFO, -vv: DEBUG)")
+    parent_parser.add_argument("path", help="SQL file or directory containing .sql files")
+    parent_parser.add_argument("--sample-count", type=int, default=5,
+                              help="Number of violating rows to sample (0=disabled)")
 
     parser = argparse.ArgumentParser(prog="anno-sql-test", description="PySpark SQL unit testing framework")
     parser.add_argument("--version", action="version", version=f"anno-sql-test {version('anno_sql_test')}")
     subparsers = parser.add_subparsers(dest="backend", required=True, help="Backend to use")
 
     spark_parser = subparsers.add_parser("spark", parents=[parent_parser])
-    spark_parser.add_argument("path", help="SQL file or directory containing .sql files")
     spark_parser.add_argument("--master", default=None, help="Spark master URL")
     spark_parser.add_argument("--conf", action="append", help="key=value")
 
     return parser
+
+
+def get_reporters(config: BaseConfig) -> list[BaseReporter]:
+    report_types = [t.strip().lower() for t in config.report_type.split(",")]
+    reporters = []
+    for rt in report_types:
+        cls = REPORTER_DICT.get(rt)
+        if cls is None:
+            continue
+        if config.output and issubclass(cls, BaseFileReporter):
+            reporters.append(cls(output_path=f"{config.output}{cls.extension()}"))
+        else:
+            reporters.append(cls())
+    if not reporters:
+        reporters.append(ConsoleReporter())
+    return reporters
 
 
 def main(args=None):
@@ -98,7 +118,7 @@ def main(args=None):
             builder = builder.config(k, v)
 
         spark = builder.getOrCreate()
-        runner = SparkRunner(spark)
+        runner = SparkRunner(spark, sample_count=config.sample_count)
     else:
         logging.error("Backend '%s' is not yet implemented", parsed.backend)
         return 1
@@ -106,23 +126,7 @@ def main(args=None):
     files = discover_sql_files(Path(parsed.path), parsed.pattern)
     suites = parse_suite(files, config.variables)
 
-    EXTENSIONS = {"xlsx": ".xlsx", "txt": ".txt", "junitxml": ".xml"}
-    report_types = (t.strip().lower() for t in parsed.report_type.split(","))
-    reporters = []
-    for rt in report_types:
-        cls = REPORTER_DICT.get(rt)
-        if cls is None:
-            continue
-        if rt == "console":
-            reporters.append(cls())
-        elif config.output:
-            ext = EXTENSIONS.get(rt, "")
-            reporters.append(cls(output_path=f"{config.output}{ext}"))
-        else:
-            reporters.append(cls())
-    if not reporters:
-        reporters.append(ConsoleReporter())
-
+    reporters = get_reporters(config)
     results = [runner.run(suite) for suite in suites]
 
     exit_code = 0

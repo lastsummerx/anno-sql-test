@@ -20,7 +20,7 @@ def _make_suite_result(name: str, passed: bool, skip: bool = False):
 
 def test_report_pass(capsys):
     sr = _make_suite_result("test_pass", passed=True)
-    ec = ConsoleReporter().report(sr)
+    ec = ConsoleReporter().report([sr])
     captured = capsys.readouterr()
     assert "PASS" in captured.out
     assert ec == 0
@@ -33,7 +33,7 @@ def test_report_fail(capsys):
         assertion=SingleAssertAll(predicate="a > 0"),
         passed=False, message="values not > 0",
     ))
-    ec = ConsoleReporter().report(sr)
+    ec = ConsoleReporter().report([sr])
     captured = capsys.readouterr()
     assert "FAIL" in captured.out
     assert "values not > 0" in captured.out
@@ -43,7 +43,7 @@ def test_report_fail(capsys):
 def test_report_skip(capsys):
     sr = _make_suite_result("test_skip", passed=False, skip=True)
     sr.results[0].skip_reason = "dependency failed"
-    ec = ConsoleReporter().report(sr)
+    ec = ConsoleReporter().report([sr])
     captured = capsys.readouterr()
     assert "SKIP" in captured.out
     assert "dependency failed" in captured.out
@@ -64,7 +64,7 @@ def test_report_mixed(capsys):
         ]),
     ]
     sr = SqlTestSuiteResult(suite=suite, results=results)
-    ec = ConsoleReporter().report(sr)
+    ec = ConsoleReporter().report([sr])
     captured = capsys.readouterr()
     assert "1 passed, 1 failed" in captured.out
     assert ec == 1
@@ -78,7 +78,7 @@ def test_report_summary_line(capsys):
         suite.blocks.append(c)
         results.append(SqlTestResult(case=c, passed=True))
     sr = SqlTestSuiteResult(suite=suite, results=results)
-    ec = ConsoleReporter().report(sr)
+    ec = ConsoleReporter().report([sr])
     captured = capsys.readouterr()
     assert "3 passed in" in captured.out
     assert "summary.sql" in captured.out

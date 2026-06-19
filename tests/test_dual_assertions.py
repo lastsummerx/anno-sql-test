@@ -398,3 +398,53 @@ def test_temporal_approx_non_temporal_fails():
     )
     assert result.passed is False
     assert "not temporal" in result.message
+
+
+def test_dual_join_equal_failure_sample():
+    sample_eval = SparkAssertionEvaluator(sample_count=3)
+    left = spark.createDataFrame([(1, "a", 100), (2, "b", 200)], ["id", "name", "amt"])
+    right = spark.createDataFrame([(1, "a", 999), (2, "b", 200)], ["id", "name", "amt"])
+    result = sample_eval.evaluate(
+        DualJoinAssertEqual(keys=["id"], values=["amt"]),
+        [left, right],
+    )
+    assert result.passed is False
+    assert result.failure_sample is not None
+    assert isinstance(result.failure_sample, list)
+    assert len(result.failure_sample) == 1
+
+
+def test_dual_join_equal_failure_sample_disabled():
+    sample_eval = SparkAssertionEvaluator(sample_count=0)
+    left = spark.createDataFrame([(1, "a", 100)], ["id", "name", "amt"])
+    right = spark.createDataFrame([(1, "a", 999)], ["id", "name", "amt"])
+    result = sample_eval.evaluate(
+        DualJoinAssertEqual(keys=["id"], values=["amt"]),
+        [left, right],
+    )
+    assert result.passed is False
+    assert result.failure_sample is None
+
+
+def test_dual_join_no_violations_no_failure_sample():
+    sample_eval = SparkAssertionEvaluator(sample_count=3)
+    left = spark.createDataFrame([(1, "a", 100)], ["id", "name", "amt"])
+    right = spark.createDataFrame([(1, "a", 100)], ["id", "name", "amt"])
+    result = sample_eval.evaluate(
+        DualJoinAssertEqual(keys=["id"], values=["amt"]),
+        [left, right],
+    )
+    assert result.passed is True
+    assert result.failure_sample is None
+
+
+def test_multi_agg_no_failure_sample():
+    sample_eval = SparkAssertionEvaluator(sample_count=3)
+    df1 = spark.createDataFrame([(100,), (200,)], ["amt"])
+    df2 = spark.createDataFrame([(100,), (100,)], ["amt"])
+    result = sample_eval.evaluate(
+        MultiAggAssertEqual(agg="sum", fields=["amt"]),
+        [df1, df2],
+    )
+    assert result.passed is False
+    assert result.failure_sample is None

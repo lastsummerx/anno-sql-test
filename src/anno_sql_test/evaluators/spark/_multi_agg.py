@@ -15,7 +15,7 @@ from anno_sql_test.evaluators.spark._base import (
     BaseStepwiseSparkEvaluator,
     DelegatingStepwiseSparkFusedEvaluator,
 )
-from anno_sql_test.evaluators.spark._util import (
+from anno_sql_test.evaluators.spark._utils import (
     ColumnComparator,
     ColumnTypeChecker,
     NamedColumn,

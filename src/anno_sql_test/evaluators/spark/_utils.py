@@ -40,6 +40,7 @@ type ColumnComparator = Callable[[Column, Column], Column]
 type ColumnTypeChecker = Callable[[str, DataType], str | None]
 
 
+_WORD_RE = re.compile(r'\w+')
 _NON_WORD = re.compile(r"\W")
 _IS_GLOB = re.compile(r'^[\w.*]+$')
 _TYPE_PREFIX_MAP = MappingProxyType({
@@ -185,3 +186,10 @@ def _batch_validate_types(
             if err:
                 errors.append(f"{err} in df[{i}]")
     return errors
+
+
+def extract_word_fields(expressions: list[str], all_columns: list[str]) -> list[str]:
+    fields = set()
+    for expr in expressions:
+        fields.update(_WORD_RE.findall(expr))
+    return sorted(f for f in fields if f in all_columns)

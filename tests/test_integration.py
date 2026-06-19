@@ -76,7 +76,7 @@ def test_integration_full_pipeline(tmp_path: Path):
     assert result.results[6].passed is True
     assert result.results[7].passed is True
 
-    ec = ConsoleReporter().report(result)
+    ec = ConsoleReporter().report([result])
     assert ec == 0
 
 
@@ -88,5 +88,5 @@ def test_integration_failure(tmp_path: Path):
     runner = SparkRunner(spark)
     result = runner.run(suites[0])
     assert result.results[0].passed is False
-    ec = ConsoleReporter().report(result)
+    ec = ConsoleReporter().report([result])
     assert ec == 1

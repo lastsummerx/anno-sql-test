@@ -56,22 +56,22 @@ _logger = logging.getLogger(__name__)
 
 
 class SparkAssertionEvaluator(BaseSparkEvaluator[Assertion]):
-    def __init__(self):
+    def __init__(self, sample_count: int = 0):
         _handlers = [
-            (SingleAssertAll, SingleAssertAllEvaluator()),
-            (SingleAssertAny, SingleAssertAnyEvaluator()),
-            (SingleAssertNone, SingleAssertNoneEvaluator()),
-            (SingleAssertEmpty, SingleAssertEmptyEvaluator()),
+            (SingleAssertAll, SingleAssertAllEvaluator(sample_count=sample_count)),
+            (SingleAssertAny, SingleAssertAnyEvaluator(sample_count=sample_count)),
+            (SingleAssertNone, SingleAssertNoneEvaluator(sample_count=sample_count)),
+            (SingleAssertEmpty, SingleAssertEmptyEvaluator(sample_count=sample_count)),
             (SingleAssertNotEmpty, SingleAssertNotEmptyEvaluator()),
-            (SingleAssertUnique, SingleAssertUniqueEvaluator()),
+            (SingleAssertUnique, SingleAssertUniqueEvaluator(sample_count=sample_count)),
             (MultiAggAssertEqual, MultiAggAssertEqualEvaluator()),
             (MultiAggAssertNumericRatioApprox, MultiAggAssertNumericRatioApproxEvaluator()),
             (MultiAggAssertNumericDeltaApprox, MultiAggAssertNumericDeltaApproxEvaluator()),
             (MultiAggAssertTemporalApprox, MultiAggAssertTemporalApproxEvaluator()),
-            (DualJoinAssertEqual, DualJoinAssertEqualEvaluator()),
-            (DualJoinAssertNumericRatioApprox, DualJoinAssertNumericRatioApproxEvaluator()),
-            (DualJoinAssertNumericDeltaApprox, DualJoinAssertNumericDeltaApproxEvaluator()),
-            (DualJoinAssertTemporalApprox, DualJoinAssertTemporalApproxEvaluator()),
+            (DualJoinAssertEqual, DualJoinAssertEqualEvaluator(sample_count=sample_count)),
+            (DualJoinAssertNumericRatioApprox, DualJoinAssertNumericRatioApproxEvaluator(sample_count=sample_count)),
+            (DualJoinAssertNumericDeltaApprox, DualJoinAssertNumericDeltaApproxEvaluator(sample_count=sample_count)),
+            (DualJoinAssertTemporalApprox, DualJoinAssertTemporalApproxEvaluator(sample_count=sample_count)),
         ]
         self._handlers: dict[type[Assertion], BaseSparkEvaluator[Assertion]] = {
             k: cast(BaseSparkEvaluator[Assertion], v)
@@ -88,13 +88,13 @@ class SparkAssertionEvaluator(BaseSparkEvaluator[Assertion]):
 
 
 class SparkFusedAssertionEvaluator(BaseSparkFusedEvaluator[Assertion]):
-    def __init__(self, fallback: SimpleFusedAssertionEvaluator | None = None):
-        self._fallback = fallback or SimpleFusedAssertionEvaluator(SparkAssertionEvaluator())
+    def __init__(self, sample_count: int = 0, fallback: SimpleFusedAssertionEvaluator | None = None):
+        self._fallback = fallback or SimpleFusedAssertionEvaluator(SparkAssertionEvaluator(sample_count=sample_count))
         self._handlers: dict[type[Assertion], BaseFusedAssertionEvaluator] = {}
         evaluators: list[DelegatingStepwiseSparkFusedEvaluator] = [
-            SinglePredicateFusedAssertionEvaluator(),
+            SinglePredicateFusedAssertionEvaluator(sample_count=sample_count),
             MultiAggFusedAssertionEvaluator(),
-            DualJoinFusedAssertionEvaluator(),
+            DualJoinFusedAssertionEvaluator(sample_count=sample_count),
         ]
         for evaluator in evaluators:
             for k in evaluator.get_evaluator_map().keys():

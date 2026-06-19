@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "anno-sql-test"
-version = "0.2.0"
+version = "0.3.0"
 description = "Add your description here"
 readme = "README.md"
 license = "MIT"
@@ -41,6 +41,7 @@ ignore = [
     "ARG002", # unused argument
     "UP046",  # uses Generic subclass
     "B905",   # `zip()` without an explicit `strict=` parameter
+    "B027",   # empty method in an abstract class
 ]
 select = [
     "E",    # pycodestyle errors

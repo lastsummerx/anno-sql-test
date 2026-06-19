@@ -1,4 +1,5 @@
 import logging
+import textwrap
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,6 +11,16 @@ from anno_sql_test.models import SqlTestSuiteResult
 class BaseReporter(ABC):
     @abstractmethod
     def report(self, results: list[SqlTestSuiteResult]) -> int:
+        ...
+
+
+class BaseFileReporter(BaseReporter):
+    def __init__(self, output_path: str | None = None):
+        self.output_path = output_path or f"test_report.{self.extension()}"
+
+    @classmethod
+    @abstractmethod
+    def extension(cls) -> str:
         ...
 
 
@@ -26,6 +37,12 @@ class TextReport:
     passed: int = 0
     failed: int = 0
     skipped: int = 0
+
+
+def _format_failure_sample(sample: object) -> str:
+    if isinstance(sample, list):
+        return "\n".join(str(item) for item in sample)
+    return str(sample)
 
 
 def _format_duration(seconds: float) -> str:
@@ -82,7 +99,10 @@ def _format_text_report(result: SqlTestSuiteResult) -> TextReport:
             report.lines.append(f"  FAIL  {tr.case.name}{duration_tag}")
             for ar in tr.assertion_results:
                 if not ar.passed:
-                    report.lines.append(f"         {ar.message}")
+                    indent = "         "
+                    report.lines.append(f"{indent}{ar.message}")
+                    if ar.failure_sample is not None:
+                        report.lines.append(textwrap.indent(_format_failure_sample(ar.failure_sample), prefix=indent))
 
     summary_parts = [f"{report.passed} passed"]
     if report.failed:
@@ -110,10 +130,7 @@ class ConsoleReporter(BaseReporter):
         return any_failed
 
 
-class XlsxReporter(BaseReporter):
-    def __init__(self, output_path: str = "test_report.xlsx"):
-        self.output_path = output_path
-
+class XlsxReporter(BaseFileReporter):
     def report(self, results: list[SqlTestSuiteResult]) -> int:
         try:
             from openpyxl import Workbook
@@ -124,30 +141,37 @@ class XlsxReporter(BaseReporter):
         wb = Workbook()
         ws = wb.active
         ws.title = "Test Results"
-        ws.append(["Suite", "Test Name", "Status", "Duration", "Message"])
+        ws.append(["Suite", "Test Name", "Status", "Duration", "Message", "Samples"])
 
         any_failed = 0
         for result in results:
             for tr in result.results:
                 duration_str = _format_duration(tr.duration)
                 if tr.skipped:
-                    ws.append([str(result.suite.path), tr.case.name, "SKIP", duration_str, tr.skip_reason or ""])
+                    ws.append([str(result.suite.path), tr.case.name, "SKIP", duration_str, tr.skip_reason or "", ""])
                 elif tr.passed:
-                    ws.append([str(result.suite.path), tr.case.name, "PASS", duration_str, ""])
+                    ws.append([str(result.suite.path), tr.case.name, "PASS", duration_str, "", ""])
                 else:
                     messages = "; ".join(ar.message for ar in tr.assertion_results if not ar.passed)
-                    ws.append([str(result.suite.path), tr.case.name, "FAIL", duration_str, messages])
+                    samples = []
+                    for ar in tr.assertion_results:
+                        if not ar.passed and ar.failure_sample is not None:
+                            samples.append(_format_failure_sample(ar.failure_sample))
+                    samples_sep = '\n' + "-" * 20 + '\n'
+                    samples_message = samples_sep.join(samples) if samples else ""
+                    ws.append([str(result.suite.path), tr.case.name, "FAIL", duration_str, messages, samples_message])
                     any_failed = 1
 
         wb.save(self.output_path)
         print(f"Report saved to {self.output_path}")
         return any_failed
 
+    @classmethod
+    def extension(cls) -> str:
+        return 'xlsx'
 
-class TxtReporter(BaseReporter):
-    def __init__(self, output_path: str = "test_report.txt"):
-        self.output_path = output_path
 
+class TxtReporter(BaseFileReporter):
     def report(self, results: list[SqlTestSuiteResult]) -> int:
         any_failed = 0
         all_lines: list[str] = []
@@ -166,12 +190,13 @@ class TxtReporter(BaseReporter):
         print(f"Report saved to {self.output_path}")
         return any_failed
 
+    @classmethod
+    def extension(cls) -> str:
+        return 'txt'
 
-class JunitXmlReporter(BaseReporter):
+
+class JunitXmlReporter(BaseFileReporter):
     XML_HEADER = b'<?xml version="1.0" encoding="UTF-8"?>\n'
-
-    def __init__(self, output_path: str = "test_report.xml"):
-        self.output_path = output_path
 
     def report(self, results: list[SqlTestSuiteResult]) -> int:
         root, any_failed = self._build_testsuites(results)
@@ -217,11 +242,19 @@ class JunitXmlReporter(BaseReporter):
                     failure = SubElement(tc, "failure")
                     failure.set("message", ar.message)
                     failure.set("type", "AssertionError")
+                    failure.text = (
+                        f" sample:\n{_format_failure_sample(ar.failure_sample)}"
+                        if ar.failure_sample is not None else ""
+                    )
 
     def _write(self, xml: bytes) -> None:
         with Path(self.output_path).open("wb") as f:
             f.write(xml)
         print(f"Report saved to {self.output_path}")
+
+    @classmethod
+    def extension(cls) -> str:
+        return 'xml'
 
 
 REPORTER_DICT: dict[str, type[BaseReporter]] = {

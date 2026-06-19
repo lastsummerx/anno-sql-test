@@ -45,15 +45,20 @@ uv sync --extra excel
 创建一个 `.sql` 文件，用注释注解定义测试用例：
 
 ```sql
+-- @var db=prod
+-- @var tbl=${db}.users
+
+SELECT 1;
+
 -- @test users_active
 -- @assert_all status = 'ACTIVE'
 -- @assert_not_empty
-SELECT id, name, status FROM users WHERE status = 'ACTIVE';
+SELECT id, name, status FROM ${tbl} WHERE status = 'ACTIVE';
 
 -- @test user_count
 -- @assert_agg_equal count *
-SELECT * FROM users;
-SELECT * FROM users WHERE status = 'ACTIVE';
+SELECT * FROM ${tbl};
+SELECT * FROM ${tbl} WHERE status = 'ACTIVE';
 
 -- @test compare_revenue
 -- @dependency users_active
@@ -71,13 +76,14 @@ anno-sql-test spark ./sql_tests/
 # 单个文件
 anno-sql-test spark example/demo_orders.sql
 
-# 示例输出
-#   PASS  order_stats
-#   FAIL  order_total
-#          Aggregation mismatch: DF0.sum_amount=250 vs DF1.sum_amount=251
-#   PASS  compare_users
-#
-#   2 passed, 1 failed in example\demo_orders.sql
+#   PASS  order_stats (4.055s)                                                    
+#   FAIL  order_total (0.354s)
+#          Aggregation mismatch: DF0.sum(amount)=250 vs DF1.sum(amount)=251
+#   FAIL  compare_users (2.845s)
+#          Found 1 row(s) (50.0%) with mismatches: total: 1 row(s) (50.0%)
+#          {'user_name': 'alice', 'l.total': 250, 'r.total': 251}
+# 
+# 1 passed, 2 failed, 8.283s in example\demo_orders.sql
 
 # Excel 报告
 anno-sql-test spark --report-type xlsx ./sql_tests/
@@ -94,6 +100,7 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | --- | --- | --- |
 | `@test` | `<name>` | 标记一个测试用例的开始 |
 | `@non_test` | — | 标记一个非测试 SQL 块（setup / teardown，不含断言） |
+| `@var` | `<name>=<value>` | 定义变量（支持 `${other_var}` 引用） |
 | `@dependency` | `<name1>[, <name2>]` | 声明依赖同一文件中的其他测试 |
 | `@assert_all` | `<predicate>` | 所有行必须满足该谓词条件 |
 | `@assert_any` | `<predicate>` | 至少有一行满足该谓词条件 |
@@ -122,6 +129,13 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 > `<duration>` 使用 ISO 8601 格式（如 `P1DT12H`）。
 >
 > **自动 SQL**：第一个 `@test` / `@non_test` 之前的 SQL 语句会自动视为非测试块（等价于 `@non_test`）。
+>
+> **变量**：
+> - 使用 `@var name=value` 在文件级别定义变量（必须出现在所有 `@test` / `@non_test` 之前）。
+> - 变量之间可相互引用：`@var db=prod`、`@var tbl=${db}.users`。
+> - 在 SQL 中使用 `${var_name}` 进行替换：`SELECT * FROM ${tbl}`。
+> - 通过 CLI 覆盖变量：`anno-sql-test spark --var db=staging ./sql_tests/`（可重复使用）。
+> - CLI 变量优先级高于文件级变量。
 
 ---
 
@@ -195,9 +209,9 @@ uv run ruff check
 
 ## 依赖
 
-- **运行时**：无（零额外依赖）
+- **运行时**：`pyspark`
 - **可选**：`openpyxl`（Excel 报告）
-- **开发**：`pyspark`、`pytest`、`ruff`、`ty`
+- **开发**：`pytest`、`ruff`、`ty`
 
 ---
 

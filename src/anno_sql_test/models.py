@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 
 @dataclass
@@ -124,6 +124,7 @@ class AssertionResult:
     assertion: GeneralAssertion
     passed: bool
     message: str = ""
+    failure_sample: Any | None = None
 
 
 @dataclass

@@ -8,6 +8,7 @@ from typing import Any
 
 from pyspark.sql import Column, DataFrame, Row
 from pyspark.sql import functions as F
+from pyspark.storagelevel import StorageLevel
 
 from anno_sql_test.evaluators.base import (
     BaseStepwiseAssertionEvaluator,
@@ -17,7 +18,7 @@ from anno_sql_test.evaluators.spark._base import (
     BaseStepwiseSparkEvaluator,
     DelegatingStepwiseSparkFusedEvaluator,
 )
-from anno_sql_test.evaluators.spark._util import (
+from anno_sql_test.evaluators.spark._utils import (
     ColumnComparator,
     ColumnTypeChecker,
     NamedColumn,
@@ -43,6 +44,7 @@ from anno_sql_test.models import (
 class DualJoinContext:
     dataframe: DataFrame
     total: Column
+    original_keys: list[str]
     original_values: list[str]
     col_for: Callable[[str, str], str]
     namespace: str = ""
@@ -51,10 +53,14 @@ class DualJoinContext:
 class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
     BaseStepwiseSparkEvaluator[T, DualJoinContext, list[Column]],
 ):
+    KEY_PREFIX = "_key_"
     LEFT_DF_ALIAS = "l"
     RIGHT_DF_ALIAS = "r"
     TOTAL_COL = "_total"
     TOTAL_VIOLATED_COL = "_total_violated"
+
+    def __init__(self, sample_count: int = 0):
+        self._sample_count = sample_count
 
     def validate(self, assertion: T, dataframes: list[DataFrame]) -> list[tuple[str, Assertion]]:
         if len(dataframes) != 2:
@@ -82,8 +88,7 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
     @classmethod
     def prepare_shared(cls, dataframes: list[DataFrame], keys: list[str], values: list[NamedColumn]) -> DualJoinContext:
         left, right = dataframes[0], dataframes[1]
-        key_prefix = "_key_"
-        key_cols = _build_aliased_columns(keys, key_prefix)
+        key_cols = _build_aliased_columns(keys, cls.KEY_PREFIX)
         original_values = [x.name for x in values]
         value_cols = [x.column for x in values]
 
@@ -100,18 +105,29 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
         def col_for(c: str, ns: str = "") -> str:
             return col_dict[(ns, c)]
         return DualJoinContext(
-            dataframe=df, total=total, original_values=original_values, col_for=col_for,
+            dataframe=df,
+            total=total,
+            original_keys=key_names,
+            original_values=original_values,
+            col_for=col_for,
         )
 
     def prepare(self, assertion: T, dataframes: list[DataFrame]) -> DualJoinContext:
         self.logger.debug("Preparing %s: keys=%s", type(assertion).__name__, assertion.keys)
         values = self.prepare_values(dataframes, assertion.values)
-        return self.prepare_shared(dataframes, assertion.keys, values)
+        ctx = self.prepare_shared(dataframes, assertion.keys, values)
+        if self._sample_count > 0:
+            ctx.dataframe.persist(StorageLevel.DISK_ONLY)
+        return ctx
+
+    def cleanup(self, prepared: DualJoinContext) -> None:
+        if self._sample_count > 0:
+            prepared.dataframe.unpersist()
 
     def _total_violated_col(self, ns: str = "") -> str:
         return f"{self.TOTAL_VIOLATED_COL}_{ns}" if ns else self.TOTAL_VIOLATED_COL
 
-    def build(self, assertion: T, prepared: DualJoinContext) -> list[Column]:
+    def _build_cmps(self, assertion: T, prepared: DualJoinContext) -> list[Column]:
         comparator = self.get_comparator(assertion)
 
         cmps = []
@@ -122,6 +138,10 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
             both_null = F.isnull(lv) & F.isnull(rv)
             both_not_null_and_comp = F.isnotnull(lv) & F.isnotnull(rv) & comparator(lv, rv)
             cmps.append(both_null | both_not_null_and_comp)
+        return cmps
+
+    def build(self, assertion: T, prepared: DualJoinContext) -> list[Column]:
+        cmps = self._build_cmps(assertion, prepared)
         tv_name = self._total_violated_col(prepared.namespace)
         total_violated = F.count(F.when(~reduce(and_, cmps, F.lit(True)), 1)).alias(tv_name)
 
@@ -161,6 +181,31 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
     def _format_violated(self, total, violated) -> str:
         pct = violated / total * 100 if total > 0 else 0
         return f"{violated} row(s) ({pct:.1f}%)"
+
+    def sample_failure(
+        self, assertion: T, step_result: StepResult[DualJoinContext, list[Column], Row],
+    ) -> list[dict] | None:
+        if self._sample_count <= 0:
+            return None
+        prepared = step_result.prepared
+        exec_result = step_result.executed
+        failed_values = []
+        for name in prepared.original_values:
+            col_name = prepared.col_for(name, prepared.namespace)
+            if exec_result[col_name] > 0:
+                failed_values.append(name)
+        if not failed_values:
+            return None
+        df = prepared.dataframe
+        conditions = self._build_cmps(assertion, step_result.prepared)
+        filter_cond = reduce(lambda a, b: a | ~b, conditions, F.lit(False))
+        key_cols = [F.col(c).alias(c.removeprefix(self.KEY_PREFIX)) for c in step_result.prepared.original_keys]
+        for name in failed_values:
+            v = prepared.col_for(name, prepared.namespace)
+            key_cols.append(F.expr(f"{self.LEFT_DF_ALIAS}.{v}").alias(f"{self.LEFT_DF_ALIAS}.{name}"))
+            key_cols.append(F.expr(f"{self.RIGHT_DF_ALIAS}.{v}").alias(f"{self.RIGHT_DF_ALIAS}.{name}"))
+        rows = df.filter(filter_cond).select(*key_cols).take(self._sample_count)
+        return [row.asDict() for row in rows]
 
     @abstractmethod
     def get_comparator(self, assertion: T) -> ColumnComparator:
@@ -209,12 +254,13 @@ class DualJoinAssertTemporalApproxEvaluator(BaseDualJoinAssertEvaluator[DualJoin
 class DualJoinFusedAssertionEvaluator(
     DelegatingStepwiseSparkFusedEvaluator[DualJoinAssertion, DualJoinContext, list[Column]],
 ):
-    def __init__(self) -> None:
+    def __init__(self, sample_count: int = 0) -> None:
+        self._sample_count = sample_count
         self._assertion_evaluators: dict[type[DualJoinAssertion], BaseDualJoinAssertEvaluator[Any]] = {
-            DualJoinAssertEqual: DualJoinAssertEqualEvaluator(),
-            DualJoinAssertNumericRatioApprox: DualJoinAssertNumericRatioApproxEvaluator(),
-            DualJoinAssertNumericDeltaApprox: DualJoinAssertNumericDeltaApproxEvaluator(),
-            DualJoinAssertTemporalApprox: DualJoinAssertTemporalApproxEvaluator(),
+            DualJoinAssertEqual: DualJoinAssertEqualEvaluator(sample_count=sample_count),
+            DualJoinAssertNumericRatioApprox: DualJoinAssertNumericRatioApproxEvaluator(sample_count=sample_count),
+            DualJoinAssertNumericDeltaApprox: DualJoinAssertNumericDeltaApproxEvaluator(sample_count=sample_count),
+            DualJoinAssertTemporalApprox: DualJoinAssertTemporalApproxEvaluator(sample_count=sample_count),
         }
 
     def get_evaluator_map(self) -> Mapping[
@@ -236,6 +282,8 @@ class DualJoinFusedAssertionEvaluator(
         prepared_all = BaseDualJoinAssertEvaluator.prepare_shared(
             dataframes, keys, list(chain.from_iterable(all_values)),
         )
+        if self._sample_count > 0:
+            prepared_all.dataframe.persist(StorageLevel.DISK_ONLY)
         ctxs = []
         for idx, values in enumerate(all_values):
             sub_original_values = [x.name for x in values]
@@ -243,11 +291,16 @@ class DualJoinFusedAssertionEvaluator(
             ctxs.append(DualJoinContext(
                 dataframe=prepared_all.dataframe,
                 total=prepared_all.total,
+                original_keys=prepared_all.original_keys,
                 original_values=sub_original_values,
                 col_for=lambda c, ns=ns: prepared_all.col_for(c, ns),
                 namespace=ns,
             ))
         return ctxs
+
+    def cleanup(self, prepared: list[DualJoinContext]) -> None:
+        if self._sample_count > 0:
+            prepared[0].dataframe.unpersist()
 
     def execute(self, prepared: list[DualJoinContext], plan: list[list[Column]]) -> Row:
         p = prepared[0]
