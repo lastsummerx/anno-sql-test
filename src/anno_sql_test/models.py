@@ -26,18 +26,23 @@ class MultiAggAssertion(Assertion):
 
 
 @dataclass
-class SingleAssertAll(SingleAssertion):
+class SingleAssertPredicate(SingleAssertion):
     predicate: str
 
 
 @dataclass
-class SingleAssertAny(SingleAssertion):
-    predicate: str
+class SingleAssertAll(SingleAssertPredicate):
+    pass
 
 
 @dataclass
-class SingleAssertNone(SingleAssertion):
-    predicate: str
+class SingleAssertAny(SingleAssertPredicate):
+    pass
+
+
+@dataclass
+class SingleAssertNone(SingleAssertPredicate):
+    pass
 
 
 @dataclass

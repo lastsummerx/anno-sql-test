@@ -37,7 +37,7 @@ WHERE user_name = 'alice';
 
 
 -- @test compare_users
--- @assert_join_numeric_ratio_approx 0.01 on user_name values total
+-- @assert_join_numeric_ratio_approx 0.001 on user_name values total
 SELECT user_name, sum(amount) total
 FROM orders
 group by user_name;
