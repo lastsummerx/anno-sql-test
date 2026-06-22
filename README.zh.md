@@ -89,7 +89,7 @@ anno-sql-test spark example/demo_orders.sql
 anno-sql-test spark --report-type xlsx ./sql_tests/
 
 # 多种报告格式
-anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
+anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 ```
 
 ---
@@ -117,9 +117,13 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | 连接比较：`\|a - b\| <= delta` |
 | `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | 连接比较：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
 
-> **说明**：`<fields>`、`<predicate>`、`<key>`、`<value>` 均支持 SQL 表达式。
+> **说明**：
+>
+> - `<agg>` 支持简单聚合函数（`count`、`sum`、`min`、`max`），也支持单参数 lambda 表达式：`(x -> count(distinct x))`、`(col -> percentile_approx(col, 0.5))`。
+> - `<fields>`、`<predicate>`、`<key>`、`<value>` 均支持 SQL 表达式。
 >
 > **`*` 通配符支持**：
+>
 > - `*` — 所有共同列
 > - `*_cnt`、`prefix*`、`a*b` — 通配符模式匹配列名
 > - `numeric:*`、`string:*`、`temporal:*` — 指定数据类型的列
@@ -131,6 +135,7 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 > **自动 SQL**：第一个 `@test` / `@non_test` 之前的 SQL 语句会自动视为非测试块（等价于 `@non_test`）。
 >
 > **变量**：
+>
 > - 使用 `@var name=value` 在文件级别定义变量（必须出现在所有 `@test` / `@non_test` 之前）。
 > - 变量之间可相互引用：`@var db=prod`、`@var tbl=${db}.users`。
 > - 在 SQL 中使用 `${var_name}` 进行替换：`SELECT * FROM ${tbl}`。

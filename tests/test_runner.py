@@ -48,7 +48,7 @@ def test_run_dual_agg():
     suite = SqlTestSuite(path=Path("/fake/test.sql"))
     suite.blocks.append(SqlTestCase(
         name="test_agg",
-        assertions=[MultiAggAssertEqual(agg="count", fields=["*"])],
+        assertions=[MultiAggAssertEqual(agg="count({col})", fields=["*"])],
         sql_statements=["SELECT 1 AS a", "SELECT 2 AS a"],
     ))
     result = runner.run(suite)

@@ -90,7 +90,7 @@ anno-sql-test spark example/demo_orders.sql
 anno-sql-test spark --report-type xlsx ./sql_tests/
 
 # Multiple report formats
-anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
+anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 ```
 
 ---
@@ -118,9 +118,13 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 | `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | Join compare: `\|a - b\| <= delta` |
 | `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | Join compare: `\|a - b\| <= duration_seconds` (ISO 8601) |
 
-> **Note**: `<fields>`, `<predicate>`, `<key>`, and `<value>` all support SQL expressions.
+> **Note**:
+>
+> - `<agg>` supports simple aggregation functions (`count`, `sum`, `min`, `max`) and single-parameter lambda expressions: `(x -> count(distinct x))`, `(col -> percentile_approx(col, 0.5))`.
+> - `<fields>`, `<predicate>`, `<key>`, and `<value>` all support SQL expressions.
 >
 > **`*` wildcard support**:
+>
 > - `*` — all common columns across DataFrames
 > - `*_cnt`, `prefix*`, `a*b` — glob pattern matching column names
 > - `numeric:*`, `string:*`, `temporal:*` — columns of a specific data type
@@ -132,6 +136,7 @@ anno-sql-test spark --report-type console,xlsx,txt ./sql_tests/
 > **Auto SQL**: Any SQL statements before the first `@test` / `@non_test` annotation are automatically treated as a non-test block (equivalent to `@non_test`).
 >
 > **Variables**:
+>
 > - Define file-level variables with `@var name=value` (must appear before any `@test` / `@non_test`).
 > - Variables can reference each other: `@var db=prod`, `@var tbl=${db}.users`.
 > - Use `${var_name}` syntax for substitution in SQL: `SELECT * FROM ${tbl}`.

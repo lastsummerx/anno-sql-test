@@ -1,3 +1,4 @@
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -20,7 +21,6 @@ from anno_sql_test.models import (
     SingleAssertUnique,
 )
 from anno_sql_test.parser._utils import (
-    _parse_dual_join_assert,
     _parse_field_list,
     _parse_float,
     _parse_iso_duration_to_seconds,
@@ -75,24 +75,35 @@ class SingleAssertNotEmptyKeyword(AssertKeyword):
 
 class SingleAssertUniqueKeyword(AssertKeyword):
     def build(self, parse_input: ParseInput) -> Assertion:
-        cols = [c.strip() for c in _smart_split(parse_input.rest) if c.strip()]
+        cols = [c.strip() for c in _smart_split(parse_input.rest, ",") if c.strip()]
         return SingleAssertUnique(fields=cols)
 
 
 class _BaseMultiAggAssertKeyword(AssertKeyword):
-    @staticmethod
-    def _parse_agg_fields(parse_input: ParseInput) -> tuple[str, list[str]]:
-        parts = parse_input.rest.split(None, 1)
+    _COL = "{col}"
+
+    @classmethod
+    def _parse_agg_fields(cls, parse_input: ParseInput) -> tuple[str, list[str]]:
+        parts = _smart_split(parse_input.rest.strip(), r'\s', 1)
         if len(parts) < 2:
             raise ParseError(f"Expected '<agg> <fields>' in: {parse_input.source}")
-        return parts[0], _parse_field_list(parts[1])
+        return cls._make_agg_template(parts[0]), _parse_field_list(parts[1])
 
-    @staticmethod
-    def _parse_agg_param_fields(parse_input: ParseInput, param_label: str = "param") -> tuple[str, str, list[str]]:
-        parts = parse_input.rest.split(None, 2)
+    @classmethod
+    def _parse_agg_param_fields(cls, parse_input: ParseInput, param_label: str = "param") -> tuple[str, str, list[str]]:
+        parts = _smart_split(parse_input.rest.strip(), r'\s', 2)
         if len(parts) < 3:
             raise ParseError(f"Expected '<agg> <{param_label}> <fields>' in: {parse_input.source}")
-        return parts[0], parts[1], _parse_field_list(parts[2])
+        return cls._make_agg_template(parts[0]), parts[1], _parse_field_list(parts[2])
+
+    @classmethod
+    def _make_agg_template(cls, agg: str) -> str:
+        if '->' in agg:
+            inner = agg.removeprefix('(').removesuffix(')').strip()
+            param, body = (x.strip() for x in inner.split('->', 1))
+            body = body.replace('{', '{{').replace('}', '}}')
+            return re.sub(r'\b' + re.escape(param) + r'\b', cls._COL, body)
+        return f"{agg}({cls._COL})"
 
 
 class MultiAggAssertEqualKeyword(_BaseMultiAggAssertKeyword):
@@ -123,16 +134,33 @@ class MultiAggAssertTemporalKeyword(_BaseMultiAggAssertKeyword):
 
 
 class _BaseDualJoinAssertKeyword(AssertKeyword):
-    @staticmethod
-    def _parse_dual(parse_input: ParseInput) -> tuple[list[str], list[str]]:
-        return _parse_dual_join_assert(parse_input.rest, parse_input.source)
+    @classmethod
+    def _parse_dual(cls, parse_input: ParseInput) -> tuple[list[str], list[str]]:
+        return cls._parse_dual_join_assert(parse_input.rest, parse_input.source)
 
-    @staticmethod
-    def _parse_param_dual(parse_input: ParseInput, param_label: str = "param") -> tuple[str, list[str], list[str]]:
+    @classmethod
+    def _parse_param_dual(cls, parse_input: ParseInput, param_label: str = "param") -> tuple[str, list[str], list[str]]:
         parts = parse_input.rest.split(None, 1)
         if len(parts) < 2:
             raise ParseError(f"Expected '<{param_label}> on <keys> values <vals>' in: {parse_input.source}")
-        return parts[0], *_parse_dual_join_assert(parts[1], parse_input.source)
+        return parts[0], *cls._parse_dual_join_assert(parts[1], parse_input.source)
+
+    @classmethod
+    def _parse_dual_join_assert(cls, rest: str, source: str):
+        rest = rest.strip()
+        if not rest.lower().startswith("on "):
+            raise ParseError(f"Expected 'on <keys> values <vals>' in: {source}")
+        rest = rest[3:]
+        values_idx = rest.lower().find(" values ")
+        if values_idx == -1:
+            raise ParseError(f"Expected 'on <keys> values <vals>' in: {source}")
+        keys_str = rest[:values_idx].strip()
+        vals_str = rest[values_idx + len(" values "):].strip()
+        keys = _smart_split(keys_str, ",")
+        vals = _smart_split(vals_str, ",")
+        if not keys or '' in keys or not vals or '' in vals:
+            raise ParseError(f"Empty keys or values in: {source}")
+        return keys, vals
 
 
 class DualJoinAssertEqualKeyword(_BaseDualJoinAssertKeyword):

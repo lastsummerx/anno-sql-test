@@ -177,7 +177,7 @@ class TestMultiAggFusedAssertionEvaluator:
         df1 = spark.createDataFrame([(1,)], ["a"])
         df2 = spark.createDataFrame([(2,)], ["a"])
         evaluator = MultiAggFusedAssertionEvaluator()
-        fused = FusedAssertion(assertions=[MultiAggAssertEqual(agg="count", fields=["*"])])
+        fused = FusedAssertion(assertions=[MultiAggAssertEqual(agg="count({col})", fields=["*"])])
         results = evaluator.evaluate(fused, [df1, df2])
         assert len(results) == 1
         assert results[0].passed is True
@@ -186,7 +186,7 @@ class TestMultiAggFusedAssertionEvaluator:
         df1 = spark.createDataFrame([(1,)], ["a"])
         df2 = spark.createDataFrame([(1,), (2,)], ["a"])
         evaluator = MultiAggFusedAssertionEvaluator()
-        fused = FusedAssertion(assertions=[MultiAggAssertEqual(agg="count", fields=["*"])])
+        fused = FusedAssertion(assertions=[MultiAggAssertEqual(agg="count({col})", fields=["*"])])
         results = evaluator.evaluate(fused, [df1, df2])
         assert len(results) == 1
         assert results[0].passed is False
@@ -196,8 +196,8 @@ class TestMultiAggFusedAssertionEvaluator:
         df2 = spark.createDataFrame([(2, 20)], ["a", "b"])
         evaluator = MultiAggFusedAssertionEvaluator()
         fused = FusedAssertion(assertions=[
-            MultiAggAssertEqual(agg="count", fields=["*"]),
-            MultiAggAssertEqual(agg="sum", fields=["a"]),
+            MultiAggAssertEqual(agg="count({col})", fields=["*"]),
+            MultiAggAssertEqual(agg="sum({col})", fields=["a"]),
         ])
         results = evaluator.evaluate(fused, [df1, df2])
         assert len(results) == 2
@@ -209,8 +209,8 @@ class TestMultiAggFusedAssertionEvaluator:
         df2 = spark.createDataFrame([(2, 10)], ["a", "b"])
         evaluator = MultiAggFusedAssertionEvaluator()
         fused = FusedAssertion(assertions=[
-            MultiAggAssertEqual(agg="sum", fields=["a"]),
-            MultiAggAssertEqual(agg="sum", fields=["b"]),
+            MultiAggAssertEqual(agg="sum({col})", fields=["a"]),
+            MultiAggAssertEqual(agg="sum({col})", fields=["b"]),
         ])
         results = evaluator.evaluate(fused, [df1, df2])
         assert len(results) == 2
@@ -220,7 +220,7 @@ class TestMultiAggFusedAssertionEvaluator:
     def test_less_than_two_dataframes(self):
         df1 = spark.createDataFrame([(1,)], ["a"])
         evaluator = MultiAggFusedAssertionEvaluator()
-        fused = FusedAssertion(assertions=[MultiAggAssertEqual(agg="count", fields=["*"])])
+        fused = FusedAssertion(assertions=[MultiAggAssertEqual(agg="count({col})", fields=["*"])])
         results = evaluator.evaluate(fused, [df1])
         assert len(results) == 1
         assert results[0].passed is False

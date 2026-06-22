@@ -24,7 +24,7 @@ def test_agg_equal_count_all_pass():
     df1 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
     df2 = spark.createDataFrame([(3, "c"), (4, "d")], ["id", "name"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="count", fields=["*"]),
+        MultiAggAssertEqual(agg="count({col})", fields=["*"]),
         [df1, df2],
     )
     assert result.passed is True
@@ -34,7 +34,7 @@ def test_agg_equal_count_all_fail():
     df1 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
     df2 = spark.createDataFrame([(3,)], ["id"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="count", fields=["*"]),
+        MultiAggAssertEqual(agg="count({col})", fields=["*"]),
         [df1, df2],
     )
     assert result.passed is False
@@ -44,7 +44,7 @@ def test_agg_equal_numeric_star_pass():
     df1 = spark.createDataFrame([(10, "a", 1), (20, "b", 2)], ["val", "name", "id"])
     df2 = spark.createDataFrame([(10, "c", 1), (20, "d", 2)], ["val", "name", "id"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["numeric:*"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["numeric:*"]),
         [df1, df2],
     )
     assert result.passed is True
@@ -54,7 +54,7 @@ def test_agg_equal_numeric_star_fail():
     df1 = spark.createDataFrame([(1, "a", 10), (2, "b", 20)], ["id", "name", "val"])
     df2 = spark.createDataFrame([(3, "c", 5), (4, "d", 25)], ["id", "name", "val"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["numeric:*"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["numeric:*"]),
         [df1, df2],
     )
     assert result.passed is False
@@ -64,7 +64,7 @@ def test_agg_equal_glob_suffix_pass():
     df1 = spark.createDataFrame([(10, 1), (20, 2)], ["val_cnt", "id"])
     df2 = spark.createDataFrame([(10, 1), (20, 2)], ["val_cnt", "id"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["*_cnt"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["*_cnt"]),
         [df1, df2],
     )
     assert result.passed is True
@@ -74,7 +74,7 @@ def test_agg_equal_type_glob_combined_pass():
     df1 = spark.createDataFrame([(1, "a", 10), (2, "b", 20)], ["id", "name", "val_cnt"])
     df2 = spark.createDataFrame([(1, "c", 10), (2, "d", 20)], ["id", "name", "val_cnt"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["numeric:*_cnt"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["numeric:*_cnt"]),
         [df1, df2],
     )
     assert result.passed is True
@@ -84,7 +84,7 @@ def test_agg_equal_sum_pass():
     df1 = spark.createDataFrame([(100,), (200,)], ["amt"])
     df2 = spark.createDataFrame([(150,), (150,)], ["amt"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["amt"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["amt"]),
         [df1, df2],
     )
     assert result.passed is True
@@ -94,7 +94,7 @@ def test_agg_equal_sum_fail():
     df1 = spark.createDataFrame([(100,), (200,)], ["amt"])
     df2 = spark.createDataFrame([(100,), (100,)], ["amt"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["amt"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["amt"]),
         [df1, df2],
     )
     assert result.passed is False
@@ -104,7 +104,7 @@ def test_agg_numeric_ratio_approx_pass():
     df1 = spark.createDataFrame([(100.0,)], ["v"])
     df2 = spark.createDataFrame([(100.000001,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericRatioApprox(agg="sum", fields=["v"], ratio=0.01),
+        MultiAggAssertNumericRatioApprox(agg="sum({col})", fields=["v"], ratio=0.01),
         [df1, df2],
     )
     assert result.passed is True
@@ -114,7 +114,7 @@ def test_agg_numeric_ratio_approx_fail():
     df1 = spark.createDataFrame([(100.0,)], ["v"])
     df2 = spark.createDataFrame([(200.0,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericRatioApprox(agg="sum", fields=["v"], ratio=0.01),
+        MultiAggAssertNumericRatioApprox(agg="sum({col})", fields=["v"], ratio=0.01),
         [df1, df2],
     )
     assert result.passed is False
@@ -125,7 +125,7 @@ def test_agg_equal_three_dfs():
     df2 = spark.createDataFrame([(1,)], ["a"])
     df3 = spark.createDataFrame([(1,)], ["a"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="count", fields=["*"]),
+        MultiAggAssertEqual(agg="count({col})", fields=["*"]),
         [df1, df2, df3],
     )
     assert result.passed is True
@@ -136,7 +136,7 @@ def test_agg_equal_three_dfs_one_diff():
     df2 = spark.createDataFrame([(3, 50), (4, 250)], ["id", "amt"])
     df3 = spark.createDataFrame([(5, 500)], ["id", "amt"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["amt"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["amt"]),
         [df1, df2, df3],
     )
     assert result.passed is False
@@ -148,7 +148,7 @@ def test_agg_equal_three_dfs_all_diff():
     df2 = spark.createDataFrame([(200,)], ["amt"])
     df3 = spark.createDataFrame([(300,)], ["amt"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["amt"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["amt"]),
         [df1, df2, df3],
     )
     assert result.passed is False
@@ -163,7 +163,7 @@ def test_agg_equal_four_dfs_mixed():
     df3 = spark.createDataFrame([(300,)], ["amt"])
     df4 = spark.createDataFrame([(400,)], ["amt"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["amt"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["amt"]),
         [df1, df2, df3, df4],
     )
     assert result.passed is False
@@ -176,7 +176,7 @@ def test_agg_ratio_approx_three_dfs_fail():
     df2 = spark.createDataFrame([(101.0,)], ["v"])
     df3 = spark.createDataFrame([(200.0,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericRatioApprox(agg="sum", fields=["v"], ratio=0.01),
+        MultiAggAssertNumericRatioApprox(agg="sum({col})", fields=["v"], ratio=0.01),
         [df1, df2, df3],
     )
     assert result.passed is False
@@ -187,7 +187,7 @@ def test_agg_delta_approx_three_dfs_fail():
     df2 = spark.createDataFrame([(105.0,)], ["v"])
     df3 = spark.createDataFrame([(150.0,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericDeltaApprox(agg="sum", fields=["v"], delta=10.0),
+        MultiAggAssertNumericDeltaApprox(agg="sum({col})", fields=["v"], delta=10.0),
         [df1, df2, df3],
     )
     assert result.passed is False
@@ -237,7 +237,7 @@ def test_agg_equal_sum_multi_field_pass():
     df1 = spark.createDataFrame([(100, 10), (200, 20)], ["a", "b"])
     df2 = spark.createDataFrame([(150, 15), (150, 15)], ["a", "b"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["a", "b"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["a", "b"]),
         [df1, df2],
     )
     assert result.passed is True
@@ -247,7 +247,7 @@ def test_agg_equal_sum_multi_field_fail():
     df1 = spark.createDataFrame([(100, 10), (200, 20)], ["a", "b"])
     df2 = spark.createDataFrame([(100, 15), (100, 15)], ["a", "b"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["a", "b"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["a", "b"]),
         [df1, df2],
     )
     assert result.passed is False
@@ -257,7 +257,7 @@ def test_agg_equal_sum_expression_pass():
     df1 = spark.createDataFrame([(100, 10), (200, 20)], ["a", "b"])
     df2 = spark.createDataFrame([(50, 5), (250, 25)], ["a", "b"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["a + b"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["a + b"]),
         [df1, df2],
     )
     assert result.passed is True
@@ -267,7 +267,7 @@ def test_agg_equal_sum_expression_fail():
     df1 = spark.createDataFrame([(100, 10), (200, 20)], ["a", "b"])
     df2 = spark.createDataFrame([(50, 5), (250, 20)], ["a", "b"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["a + b"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["a + b"]),
         [df1, df2],
     )
     assert result.passed is False
@@ -341,7 +341,7 @@ def test_agg_numeric_delta_approx_pass():
     df1 = spark.createDataFrame([(100.0,)], ["v"])
     df2 = spark.createDataFrame([(105.0,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericDeltaApprox(agg="sum", fields=["v"], delta=10.0),
+        MultiAggAssertNumericDeltaApprox(agg="sum({col})", fields=["v"], delta=10.0),
         [df1, df2],
     )
     assert result.passed is True
@@ -351,7 +351,7 @@ def test_agg_numeric_delta_approx_fail():
     df1 = spark.createDataFrame([(100.0,)], ["v"])
     df2 = spark.createDataFrame([(120.0,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericDeltaApprox(agg="sum", fields=["v"], delta=10.0),
+        MultiAggAssertNumericDeltaApprox(agg="sum({col})", fields=["v"], delta=10.0),
         [df1, df2],
     )
     assert result.passed is False
@@ -443,7 +443,7 @@ def test_multi_agg_no_failure_sample():
     df1 = spark.createDataFrame([(100,), (200,)], ["amt"])
     df2 = spark.createDataFrame([(100,), (100,)], ["amt"])
     result = sample_eval.evaluate(
-        MultiAggAssertEqual(agg="sum", fields=["amt"]),
+        MultiAggAssertEqual(agg="sum({col})", fields=["amt"]),
         [df1, df2],
     )
     assert result.passed is False

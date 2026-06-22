@@ -45,71 +45,86 @@ def _parse_float(value: str, label: str, source: str) -> float:
         raise ParseError(f"Invalid {label} '{value}' in: {source}") from None
 
 
-def _smart_split(s: str) -> list[str]:
-    parts = []
-    current: list[str] = []
-    paren_depth = 0
-    in_single_quote = False
-    in_double_quote = False
+def _calc_top_before(s: str) -> list[bool]:
+    top_before = []
+    depth = 0
+    in_single = False
+    in_double = False
     escape = False
 
     for ch in s:
+        top_before.append(depth == 0 and not in_single and not in_double)
+
         if escape:
-            current.append(ch)
             escape = False
             continue
-        if ch == '\\' and (in_single_quote or in_double_quote):
-            current.append(ch)
+        if ch == '\\' and (in_single or in_double):
             escape = True
             continue
-        if ch == "'" and not in_double_quote:
-            in_single_quote = not in_single_quote
-            current.append(ch)
+        if ch == "'" and not in_double:
+            in_single = not in_single
             continue
-        if ch == '"' and not in_single_quote:
-            in_double_quote = not in_double_quote
-            current.append(ch)
+        if ch == '"' and not in_single:
+            in_double = not in_double
             continue
-        if ch == '(' and not in_single_quote and not in_double_quote:
-            paren_depth += 1
-            current.append(ch)
+        if ch == '(' and not in_single and not in_double:
+            depth += 1
             continue
-        if ch == ')' and not in_single_quote and not in_double_quote:
-            paren_depth -= 1
-            current.append(ch)
+        if ch == ')' and not in_single and not in_double:
+            if depth > 0:
+                depth -= 1
+            # Ignore extra closing parens; avoid negative depth.
             continue
-        if ch == ',' and paren_depth == 0 and not in_single_quote and not in_double_quote:
-            parts.append(''.join(current).strip())
-            current = []
-            continue
-        current.append(ch)
+    return top_before
 
-    remaining = ''.join(current).strip()
-    if remaining:
-        parts.append(remaining)
 
-    return [p for p in parts if p]
+def _smart_split(s: str, sep: str, maxsplit: int = -1) -> list[str]:
+    """
+    Split a string by a regex separator, but ignore separators that lie
+    inside parentheses, single quotes, or double quotes.
+
+    Args:
+        s:          Input string.
+        sep:        Separator regex pattern (string, will be compiled).
+        maxsplit:   Maximum number of splits to perform.
+                    -1 (default) means no limit (split everywhere).
+                    0  means no split (return the whole string as one piece).
+                    n  (positive) means at most n splits, returning n+1 pieces.
+
+    Returns:
+        List of pieces.
+    """
+    # Step 1: Record "top-level-before" state for each character index.
+    # top_before[i] is True if, just before processing character s[i],
+    # we are at parenthesis depth 0 and not inside any quotes.
+    top_before = _calc_top_before(s)
+
+    # Step 2: Find all separator matches and keep only those where the
+    # entire match span is at top level.
+    pattern = re.compile(sep)
+    splits = []
+    for m in pattern.finditer(s):
+        start, end = m.start(), m.end()
+        if all(top_before[start:end]):
+            splits.append((start, end))
+
+    # Step 3: Cut according to maxsplit.
+    if maxsplit < 0:
+        # -1 means unlimited splits – use all valid split points.
+        maxsplit = len(splits)
+
+    parts = []
+    last_end = 0
+    for start, end in splits[:maxsplit]:
+        parts.append(s[last_end:start].strip())
+        last_end = end
+    parts.append(s[last_end:].strip())
+
+    return parts
 
 
 def _parse_field_list(s: str) -> list[str]:
-    fields = _smart_split(s)
+    fields = _smart_split(s, ",")
     if not fields:
         raise ParseError("Empty field list")
     return fields
-
-
-def _parse_dual_join_assert(rest: str, source: str):
-    rest = rest.strip()
-    if not rest.lower().startswith("on "):
-        raise ParseError(f"Expected 'on <keys> values <vals>' in: {source}")
-    rest = rest[3:]
-    values_idx = rest.lower().find(" values ")
-    if values_idx == -1:
-        raise ParseError(f"Expected 'on <keys> values <vals>' in: {source}")
-    keys_str = rest[:values_idx].strip()
-    vals_str = rest[values_idx + len(" values "):].strip()
-    keys = _smart_split(keys_str)
-    vals = _smart_split(vals_str)
-    if not keys or not vals:
-        raise ParseError(f"Empty keys or values in: {source}")
-    return keys, vals

@@ -47,7 +47,7 @@ class TestSparkFusedAssertionEvaluator:
         evaluator = SparkFusedAssertionEvaluator()
         df1 = spark.createDataFrame([(1,)], ["a"])
         df2 = spark.createDataFrame([(2,)], ["a"])
-        fused = FusedAssertion([MultiAggAssertEqual(agg="count", fields=["*"])])
+        fused = FusedAssertion([MultiAggAssertEqual(agg="count({col})", fields=["*"])])
         results = evaluator.evaluate(fused, [df1, df2])
         assert len(results) == 1
         assert results[0].passed is True
