@@ -84,15 +84,15 @@ class _BaseMultiAggAssertKeyword(AssertKeyword):
 
     @classmethod
     def _parse_agg_fields(cls, parse_input: ParseInput) -> tuple[str, list[str]]:
-        parts = _smart_split(parse_input.rest.strip(), r'\s', 1)
-        if len(parts) < 2:
+        parts = _smart_split(parse_input.rest.strip(), r'\s+', 1)
+        if len(parts) < 2 or '' in parts:
             raise ParseError(f"Expected '<agg> <fields>' in: {parse_input.source}")
         return cls._make_agg_template(parts[0]), _parse_field_list(parts[1])
 
     @classmethod
     def _parse_agg_param_fields(cls, parse_input: ParseInput, param_label: str = "param") -> tuple[str, str, list[str]]:
-        parts = _smart_split(parse_input.rest.strip(), r'\s', 2)
-        if len(parts) < 3:
+        parts = _smart_split(parse_input.rest.strip(), r'\s+', 2)
+        if len(parts) < 3 or '' in parts:
             raise ParseError(f"Expected '<agg> <{param_label}> <fields>' in: {parse_input.source}")
         return cls._make_agg_template(parts[0]), parts[1], _parse_field_list(parts[2])
 

@@ -198,7 +198,7 @@ def test_parse_agg_numeric_ratio_approx(tmp_path: Path):
 
 def test_parse_aggregation_equal_multi_field(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_agg_equal sum a, b\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_agg_equal  sum  a, b\nselect 1;\nselect 2;")
     suite = parse_file(p)
     a = cast(MultiAggAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
@@ -208,7 +208,7 @@ def test_parse_aggregation_equal_multi_field(tmp_path: Path):
 
 def test_parse_aggregation_equal_expression(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_agg_equal sum a + b\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_agg_equal  sum  a + b\nselect 1;\nselect 2;")
     suite = parse_file(p)
     a = cast(MultiAggAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
@@ -218,7 +218,7 @@ def test_parse_aggregation_equal_expression(tmp_path: Path):
 
 def test_parse_agg_numeric_ratio_approx_multi_field(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_agg_numeric_ratio_approx sum 0.05 a, b\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_agg_numeric_ratio_approx  sum  0.05  a, b\nselect 1;\nselect 2;")
     suite = parse_file(p)
     a = cast(MultiAggAssertNumericRatioApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertNumericRatioApprox)
@@ -260,6 +260,11 @@ def test_parse_agg_numeric_ratio_approx_missing_args(tmp_path: Path):
     p3.write_text("-- @TEST t\n-- @assert_agg_numeric_ratio_approx sum bad\nselect 1;")
     with pytest.raises(ParseError, match="Expected.*<agg> <ratio> <fields>"):
         parse_file(p3)
+
+    p4 = tmp_path / "f4.sql"
+    p4.write_text("-- @TEST t\n-- @assert_agg_numeric_ratio_approx sum  0.01  \nselect 1;")
+    with pytest.raises(ParseError, match="Expected.*<agg> <ratio> <fields>"):
+        parse_file(p4)
 
 
 def test_parse_missing_on_keyword(tmp_path: Path):
