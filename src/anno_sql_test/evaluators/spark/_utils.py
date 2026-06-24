@@ -14,7 +14,12 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
-from anno_sql_test.models import ColumnSpec, ExprColumn, FieldType, GlobTemplateColumn
+from anno_sql_test.models import (
+    ColumnSpec,
+    ExprColumn,
+    FieldType,
+    GlobTemplateColumn,
+)
 
 _TEMPORAL_TYPES = (DateType, TimestampType)
 try:
@@ -142,3 +147,24 @@ def extract_word_fields(expressions: list[str], all_columns: list[str]) -> list[
     for expr in expressions:
         fields.update(_WORD_RE.findall(expr))
     return sorted(f for f in fields if f in all_columns)
+
+
+def sample_failure_distribute(
+    case_counts: dict[str, int],
+    sample_limit: int,
+) -> dict[str, int]:
+    num_cases = len(case_counts)
+    if num_cases == 0:
+        return {}
+    per_case = sample_limit // num_cases
+    remain = sample_limit
+    rst = {}
+    for case, count in case_counts.items():
+        case_sample = min(count, per_case)
+        if case_sample <= remain:
+            rst[case] = case_sample
+            remain -= case_sample
+        else:
+            rst[case] = remain
+            break
+    return rst

@@ -240,7 +240,7 @@ class SingleAssertEmptyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertEmpty]
     def sample_failure(
         self, assertion: SingleAssertEmpty, step_result: StepResult[SingleAssertContext, list[NamedColumn], Row],
     ) -> Any | None:
-        rows = step_result.prepared.dataframe.tail(self._sample_count)
+        rows = step_result.prepared.dataframe.take(self._sample_count)
         return [row.asDict() for row in rows]
 
 

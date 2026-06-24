@@ -27,6 +27,7 @@ from anno_sql_test.evaluators.spark._utils import (
     _check_numeric,
     _check_temporal,
     resolve_fields,
+    sample_failure_distribute,
 )
 from anno_sql_test.models import (
     Assertion,
@@ -59,6 +60,7 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
     RIGHT_DF_ALIAS = "r"
     TOTAL_COL = "_total"
     TOTAL_VIOLATED_COL = "_total_violated"
+    _JOIN_TYPE_COL = "_join_type"
 
     def __init__(self, sample_count: int = 0):
         self._sample_count = sample_count
@@ -98,12 +100,20 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
         original_values = [x.name for x in values]
         value_cols = [x.column for x in values]
 
-        left_prep = left.select(*key_cols, *value_cols).alias(cls.LEFT_DF_ALIAS)
-        right_prep = right.select(*key_cols, *value_cols).alias(cls.RIGHT_DF_ALIAS)
+        left_prep = left.select(F.lit(1).alias("_lm"), *key_cols, *value_cols).alias(cls.LEFT_DF_ALIAS)
+        right_prep = right.select(F.lit(1).alias("_rm"), *key_cols, *value_cols).alias(cls.RIGHT_DF_ALIAS)
 
-        key_names = left_prep.columns[:len(key_cols)]
-        val_names = left_prep.columns[len(key_cols):]
+        key_names = left_prep.columns[1:1 + len(key_cols)]
+        val_names = left_prep.columns[1 + len(key_cols):]
         df = left_prep.join(right_prep, key_names, "fullouter")
+        has_left = F.expr(f"{cls.LEFT_DF_ALIAS}._lm").isNotNull()
+        has_right = F.expr(f"{cls.RIGHT_DF_ALIAS}._rm").isNotNull()
+        df = df.withColumn(
+            cls._JOIN_TYPE_COL,
+            F.when(has_left & ~has_right, -1)
+             .when(~has_left & has_right, 1)
+             .otherwise(0),
+        )
         total = F.count(F.lit(1)).alias(cls.TOTAL_COL)
         values_with_ns = [(x.namespace, x.name) for x in values]
         col_dict = dict(zip(values_with_ns, val_names))
@@ -195,23 +205,54 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
             return None
         prepared = step_result.prepared
         exec_result = step_result.executed
-        failed_values = []
-        for name in prepared.original_values:
-            col_name = prepared.col_for(name, prepared.namespace)
-            if exec_result[col_name] > 0:
-                failed_values.append(name)
-        if not failed_values:
-            return None
         df = prepared.dataframe
         conditions = self._build_cmps(assertion, step_result.prepared)
-        filter_cond = reduce(lambda a, b: a | ~b, conditions, F.lit(False))
-        key_cols = [F.col(c).alias(c.removeprefix(self.KEY_PREFIX)) for c in step_result.prepared.original_keys]
-        for name in failed_values:
+
+        violated_indices = [
+            idx for idx, name in enumerate(prepared.original_values)
+            if exec_result[prepared.col_for(name, prepared.namespace)] > 0
+        ]
+        if not violated_indices:
+            return None
+
+        violation_cond = reduce(lambda a, b: a | ~b, [conditions[i] for i in violated_indices], F.lit(False))
+
+        jt = F.col(self._JOIN_TYPE_COL)
+        sub_filters = {
+            "left-only": violation_cond & (jt == -1),
+            "right-only": violation_cond & (jt == 1),
+            "mismatch": violation_cond & (jt == 0),
+        }
+
+        counts_row = df.agg(*[
+            F.count(F.when(f, 1)).alias(k)
+            for k, f in sub_filters.items()
+        ]).collect()[0]
+
+        case_counts = {k: int(counts_row[k]) for k in sub_filters if int(counts_row[k]) > 0}
+        if not case_counts:
+            return None
+
+        if len(case_counts) > self._sample_count:
+            self.logger.warning(
+                f"Number of failure cases ({len(case_counts)}) exceeds sample_count ({self._sample_count}), "
+                "sampling will be limited")
+        per_case = sample_failure_distribute(case_counts, self._sample_count)
+
+        key_cols_base = [F.col(c).alias(c.removeprefix(self.KEY_PREFIX)) for c in step_result.prepared.original_keys]
+        failed_names = [prepared.original_values[i] for i in violated_indices]
+        value_cols = []
+        for name in failed_names:
             v = prepared.col_for(name, prepared.namespace)
-            key_cols.append(F.expr(f"{self.LEFT_DF_ALIAS}.{v}").alias(f"{self.LEFT_DF_ALIAS}.{name}"))
-            key_cols.append(F.expr(f"{self.RIGHT_DF_ALIAS}.{v}").alias(f"{self.RIGHT_DF_ALIAS}.{name}"))
-        rows = df.filter(filter_cond).select(*key_cols).take(self._sample_count)
-        return [row.asDict() for row in rows]
+            value_cols.append(F.expr(f"{self.LEFT_DF_ALIAS}.{v}").alias(f"{self.LEFT_DF_ALIAS}.{name}"))
+            value_cols.append(F.expr(f"{self.RIGHT_DF_ALIAS}.{v}").alias(f"{self.RIGHT_DF_ALIAS}.{name}"))
+        all_cols = key_cols_base + value_cols
+
+        result = []
+        for k, n in per_case.items():
+            rows = df.filter(sub_filters[k]).select(*all_cols).take(n)
+            result.extend(row.asDict() for row in rows)
+        return result if result else None
 
     @abstractmethod
     def get_comparator(self, assertion: T) -> ColumnComparator:
