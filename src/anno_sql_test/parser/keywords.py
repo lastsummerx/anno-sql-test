@@ -4,7 +4,9 @@ from dataclasses import dataclass
 
 from anno_sql_test.errors import ParseError
 from anno_sql_test.models import (
+    AggFunc,
     Assertion,
+    ColumnSpec,
     DualJoinAssertEqual,
     DualJoinAssertNumericDeltaApprox,
     DualJoinAssertNumericRatioApprox,
@@ -25,6 +27,7 @@ from anno_sql_test.parser._utils import (
     _parse_float,
     _parse_iso_duration_to_seconds,
     _smart_split,
+    parse_column_spec,
 )
 
 
@@ -50,17 +53,17 @@ class AssertKeyword(AnnotationKeyword[Assertion]):
 
 class SingleAssertAllKeyword(AssertKeyword):
     def build(self, parse_input: ParseInput) -> Assertion:
-        return SingleAssertAll(predicate=parse_input.rest)
+        return SingleAssertAll(predicate=parse_column_spec(parse_input.rest))
 
 
 class SingleAssertAnyKeyword(AssertKeyword):
     def build(self, parse_input: ParseInput) -> Assertion:
-        return SingleAssertAny(predicate=parse_input.rest)
+        return SingleAssertAny(predicate=parse_column_spec(parse_input.rest))
 
 
 class SingleAssertNoneKeyword(AssertKeyword):
     def build(self, parse_input: ParseInput) -> Assertion:
-        return SingleAssertNone(predicate=parse_input.rest)
+        return SingleAssertNone(predicate=parse_column_spec(parse_input.rest))
 
 
 class SingleAssertEmptyKeyword(AssertKeyword):
@@ -75,7 +78,7 @@ class SingleAssertNotEmptyKeyword(AssertKeyword):
 
 class SingleAssertUniqueKeyword(AssertKeyword):
     def build(self, parse_input: ParseInput) -> Assertion:
-        cols = [c.strip() for c in _smart_split(parse_input.rest, ",") if c.strip()]
+        cols = [parse_column_spec(c.strip()) for c in _smart_split(parse_input.rest, ",") if c.strip()]
         return SingleAssertUnique(fields=cols)
 
 
@@ -83,18 +86,20 @@ class _BaseMultiAggAssertKeyword(AssertKeyword):
     _COL = "{col}"
 
     @classmethod
-    def _parse_agg_fields(cls, parse_input: ParseInput) -> tuple[str, list[str]]:
+    def _parse_agg_fields(cls, parse_input: ParseInput) -> tuple[AggFunc, list[ColumnSpec]]:
         parts = _smart_split(parse_input.rest.strip(), r'\s+', 1)
         if len(parts) < 2 or '' in parts:
             raise ParseError(f"Expected '<agg> <fields>' in: {parse_input.source}")
-        return cls._make_agg_template(parts[0]), _parse_field_list(parts[1])
+        return AggFunc(func=cls._make_agg_template(parts[0])), _parse_field_list(parts[1])
 
     @classmethod
-    def _parse_agg_param_fields(cls, parse_input: ParseInput, param_label: str = "param") -> tuple[str, str, list[str]]:
+    def _parse_agg_param_fields(
+        cls, parse_input: ParseInput, param_label: str = "param",
+    ) -> tuple[AggFunc, str, list[ColumnSpec]]:
         parts = _smart_split(parse_input.rest.strip(), r'\s+', 2)
         if len(parts) < 3 or '' in parts:
             raise ParseError(f"Expected '<agg> <{param_label}> <fields>' in: {parse_input.source}")
-        return cls._make_agg_template(parts[0]), parts[1], _parse_field_list(parts[2])
+        return AggFunc(func=cls._make_agg_template(parts[0])), parts[1], _parse_field_list(parts[2])
 
     @classmethod
     def _make_agg_template(cls, agg: str) -> str:
@@ -135,11 +140,13 @@ class MultiAggAssertTemporalKeyword(_BaseMultiAggAssertKeyword):
 
 class _BaseDualJoinAssertKeyword(AssertKeyword):
     @classmethod
-    def _parse_dual(cls, parse_input: ParseInput) -> tuple[list[str], list[str]]:
+    def _parse_dual(cls, parse_input: ParseInput) -> tuple[list[ColumnSpec], list[ColumnSpec]]:
         return cls._parse_dual_join_assert(parse_input.rest, parse_input.source)
 
     @classmethod
-    def _parse_param_dual(cls, parse_input: ParseInput, param_label: str = "param") -> tuple[str, list[str], list[str]]:
+    def _parse_param_dual(
+        cls, parse_input: ParseInput, param_label: str = "param",
+    ) -> tuple[str, list[ColumnSpec], list[ColumnSpec]]:
         parts = parse_input.rest.split(None, 1)
         if len(parts) < 2:
             raise ParseError(f"Expected '<{param_label}> on <keys> values <vals>' in: {parse_input.source}")
@@ -156,10 +163,8 @@ class _BaseDualJoinAssertKeyword(AssertKeyword):
             raise ParseError(f"Expected 'on <keys> values <vals>' in: {source}")
         keys_str = rest[:values_idx].strip()
         vals_str = rest[values_idx + len(" values "):].strip()
-        keys = _smart_split(keys_str, ",")
-        vals = _smart_split(vals_str, ",")
-        if not keys or '' in keys or not vals or '' in vals:
-            raise ParseError(f"Empty keys or values in: {source}")
+        keys = _parse_field_list(keys_str, "keys")
+        vals = _parse_field_list(vals_str, "values")
         return keys, vals
 
 

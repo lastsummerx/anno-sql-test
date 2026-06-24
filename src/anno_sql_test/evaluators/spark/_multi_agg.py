@@ -27,8 +27,10 @@ from anno_sql_test.evaluators.spark._utils import (
     resolve_fields,
 )
 from anno_sql_test.models import (
+    AggFunc,
     Assertion,
     AssertionResult,
+    ColumnSpec,
     FusedAssertion,
     MultiAggAssertEqual,
     MultiAggAssertion,
@@ -84,10 +86,10 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
 
     @classmethod
     def prepare_values(
-        cls, dataframes: list[DataFrame], agg: str, values: list[str], namespace: str = "",
+        cls, dataframes: list[DataFrame], agg: AggFunc, values: list[ColumnSpec], namespace: str = "",
     ) -> list[NamedColumn]:
         fields = resolve_fields(values, dataframes)
-        agg_fields = [agg.format(col=x) for x in fields]
+        agg_fields = [agg.format(x) for x in fields]
         prefix = f"_{namespace}_agg_" if namespace else "_agg_"
         agg_cols = _build_aliased_columns(agg_fields, prefix)
         return [NamedColumn(name=f, column=c, namespace=namespace) for f, c in zip(fields, agg_cols)]
@@ -170,8 +172,8 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
             if not exec_result[cmp.name]:
                 left_val = exec_result[cmp.df_i_column]
                 right_val = exec_result[cmp.df_j_column]
-                left_str = f"DF{cmp.df_i}.{agg.format(col=cmp.original_name)}={left_val}"
-                right_str = f"DF{cmp.df_j}.{agg.format(col=cmp.original_name)}={right_val}"
+                left_str = f"DF{cmp.df_i}.{agg.format(cmp.original_name)}={left_val}"
+                right_str = f"DF{cmp.df_j}.{agg.format(cmp.original_name)}={right_val}"
                 bad_parts.append(
                     f"{left_str} vs {right_str}",
                 )

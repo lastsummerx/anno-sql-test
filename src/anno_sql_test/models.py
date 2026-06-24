@@ -1,6 +1,40 @@
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any, Generic, TypeVar
+
+
+class FieldType(Enum):
+    NUMERIC = 'numeric'
+    STRING = 'string'
+    TEMPORAL = 'temporal'
+
+
+@dataclass
+class ExprColumn:
+    expr: str
+
+
+@dataclass
+class GlobTemplateColumn:
+    glob: str
+    type_filter: FieldType | None = None
+    excepts: list[str] = field(default_factory=list)
+    expr: str = "{col}"
+
+    def format(self, field: str) -> str:
+        return self.expr.format(col=field)
+
+
+@dataclass
+class AggFunc:
+    func: str
+
+    def format(self, field: str) -> str:
+        return self.func.format(col=field)
+
+
+type ColumnSpec = ExprColumn | GlobTemplateColumn
 
 
 @dataclass
@@ -15,19 +49,19 @@ class SingleAssertion(Assertion):
 
 @dataclass
 class DualJoinAssertion(Assertion):
-    keys: list[str]
-    values: list[str]
+    keys: list[ColumnSpec]
+    values: list[ColumnSpec]
 
 
 @dataclass
 class MultiAggAssertion(Assertion):
-    fields: list[str]
-    agg: str
+    fields: list[ColumnSpec]
+    agg: AggFunc
 
 
 @dataclass
 class SingleAssertPredicate(SingleAssertion):
-    predicate: str
+    predicate: ColumnSpec
 
 
 @dataclass
@@ -57,7 +91,7 @@ class SingleAssertNotEmpty(SingleAssertion):
 
 @dataclass
 class SingleAssertUnique(Assertion):
-    fields: list[str]
+    fields: list[ColumnSpec]
 
 
 @dataclass
@@ -67,7 +101,7 @@ class MultiAggAssertEqual(MultiAggAssertion):
 
 @dataclass
 class MultiAggAssertNumericRatioApprox(MultiAggAssertion):
-    ratio: float = 0.01
+    ratio: float
 
 
 @dataclass
@@ -87,7 +121,7 @@ class DualJoinAssertEqual(DualJoinAssertion):
 
 @dataclass
 class DualJoinAssertNumericRatioApprox(DualJoinAssertion):
-    ratio: float = 0.01
+    ratio: float
 
 
 @dataclass

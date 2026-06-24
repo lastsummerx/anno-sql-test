@@ -2,6 +2,7 @@ from pathlib import Path
 
 from anno_sql_test.models import (
     AssertionResult,
+    ExprColumn,
     SingleAssertAll,
     SqlTestCase,
     SqlTestResult,
@@ -30,7 +31,7 @@ def test_report_fail(capsys):
     sr = _make_suite_result("test_fail", passed=False)
     tr = sr.results[0]
     tr.assertion_results.append(AssertionResult(
-        assertion=SingleAssertAll(predicate="a > 0"),
+        assertion=SingleAssertAll(predicate=ExprColumn(expr="a > 0")),
         passed=False, message="values not > 0",
     ))
     ec = ConsoleReporter().report([sr])
@@ -59,7 +60,7 @@ def test_report_mixed(capsys):
         SqlTestResult(case=case1, passed=True),
         SqlTestResult(case=case2, passed=False, assertion_results=[
             AssertionResult(
-                assertion=SingleAssertAll(predicate="a > 0"), passed=False, message="fail msg",
+                assertion=SingleAssertAll(predicate=ExprColumn(expr="a > 0")), passed=False, message="fail msg",
             ),
         ]),
     ]

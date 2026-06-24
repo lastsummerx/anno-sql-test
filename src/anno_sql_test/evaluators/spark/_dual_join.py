@@ -31,6 +31,7 @@ from anno_sql_test.evaluators.spark._utils import (
 from anno_sql_test.models import (
     Assertion,
     AssertionResult,
+    ColumnSpec,
     DualJoinAssertEqual,
     DualJoinAssertion,
     DualJoinAssertNumericDeltaApprox,
@@ -79,16 +80,21 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
         return [(";".join(errors), assertion)] if errors else []
 
     @classmethod
-    def prepare_values(cls, dataframes: list[DataFrame], values: list[str], namespace: str = "") -> list[NamedColumn]:
+    def prepare_values(
+        cls, dataframes: list[DataFrame], values: list[ColumnSpec], namespace: str = "",
+    ) -> list[NamedColumn]:
         original_values = resolve_fields(values, dataframes)
         prefix = f"_{namespace}_val_" if namespace else "_val_"
         value_cols = _build_aliased_columns(original_values, prefix)
         return [NamedColumn(name=ov, column=vc, namespace=namespace) for ov, vc in zip(original_values, value_cols)]
 
     @classmethod
-    def prepare_shared(cls, dataframes: list[DataFrame], keys: list[str], values: list[NamedColumn]) -> DualJoinContext:
+    def prepare_shared(
+        cls, dataframes: list[DataFrame], keys: list[ColumnSpec], values: list[NamedColumn],
+    ) -> DualJoinContext:
         left, right = dataframes[0], dataframes[1]
-        key_cols = _build_aliased_columns(keys, cls.KEY_PREFIX)
+        resolved_keys = resolve_fields(keys, dataframes)
+        key_cols = _build_aliased_columns(resolved_keys, cls.KEY_PREFIX)
         original_values = [x.name for x in values]
         value_cols = [x.column for x in values]
 

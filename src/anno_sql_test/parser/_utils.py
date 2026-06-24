@@ -1,6 +1,14 @@
 import re
+from dataclasses import dataclass
+from enum import Enum
 
 from anno_sql_test.errors import ParseError
+from anno_sql_test.models import (
+    ColumnSpec,
+    ExprColumn,
+    FieldType,
+    GlobTemplateColumn,
+)
 
 _ISO_PATTERN = re.compile(
     r'^P'
@@ -123,8 +131,149 @@ def _smart_split(s: str, sep: str, maxsplit: int = -1) -> list[str]:
     return parts
 
 
-def _parse_field_list(s: str) -> list[str]:
-    fields = _smart_split(s, ",")
-    if not fields:
-        raise ParseError("Empty field list")
-    return fields
+_WORD_CHARS = re.compile(r'[\w.]+')
+
+_FIELD_TYPE_ALIASES: dict[str, FieldType] = {
+    'numeric': FieldType.NUMERIC,
+    'number': FieldType.NUMERIC,
+    'string': FieldType.STRING,
+    'temporal': FieldType.TEMPORAL,
+}
+
+
+class TokenKind(Enum):
+    STRING = 'string'
+    STAR = 'star'
+    COLON = 'colon'
+    WORD = 'word'
+    OTHER = 'other'
+
+
+@dataclass
+class Token:
+    kind: TokenKind
+    value: str
+    start: int
+    end: int
+
+
+def skip_string(s: str, i: int) -> int:
+    if i >= len(s) or s[i] not in ("'", '"'):
+        return i
+    quote = s[i]
+    j = i + 1
+    while j < len(s):
+        if s[j] == '\\':
+            j += 2
+            continue
+        if s[j] == quote:
+            return j + 1
+        j += 1
+    return j
+
+
+def tokenize(s: str) -> list[Token]:
+    tokens = []
+    i = 0
+    while i < len(s):
+        if s[i] in ("'", '"'):
+            end = skip_string(s, i)
+            tokens.append(Token(TokenKind.STRING, s[i:end], i, end))
+            i = end
+        elif s[i] == '*':
+            tokens.append(Token(TokenKind.STAR, '*', i, i + 1))
+            i += 1
+        elif s[i] == ':':
+            tokens.append(Token(TokenKind.COLON, ':', i, i + 1))
+            i += 1
+        elif m := _WORD_CHARS.match(s, i):
+            tokens.append(Token(TokenKind.WORD, m.group(), i, m.end()))
+            i = m.end()
+        else:
+            tokens.append(Token(TokenKind.OTHER, s[i], i, i + 1))
+            i += 1
+    return tokens
+
+
+def _extract_glob_and_template(expr: str) -> tuple[str, str]:
+    if re.match(r'^[\w.*]+$', expr):
+        return expr, '{col}'
+
+    tokens = tokenize(expr)
+    star_idx = next((i for i, t in enumerate(tokens) if t.kind == TokenKind.STAR), None)
+    if star_idx is None:
+        return expr, '{col}'
+
+    start = tokens[star_idx].start
+    end = tokens[star_idx].end
+
+    j = star_idx - 1
+    while j >= 0 and tokens[j].kind == TokenKind.WORD:
+        start = tokens[j].start
+        j -= 1
+
+    j = star_idx + 1
+    while j < len(tokens) and tokens[j].kind == TokenKind.WORD:
+        end = tokens[j].end
+        j += 1
+
+    glob_pattern = expr[start:tokens[star_idx].start] + '*' + expr[tokens[star_idx].end:end]
+    template = expr[:start] + '{col}' + expr[end:]
+
+    return glob_pattern, template
+
+
+def _parse_except_patterns(s: str) -> list[str]:
+    raw = s.strip()
+    if raw.startswith('(') and raw.endswith(')'):
+        raw = raw[1:-1]
+    return [p.strip() for p in raw.split(',') if p.strip()]
+
+
+def parse_column_spec(s: str) -> ColumnSpec:
+    tokens = tokenize(s)
+
+    type_filter = None
+    prefix_end = 0
+    if (len(tokens) >= 2 and tokens[0].kind == TokenKind.WORD
+            and tokens[1].kind == TokenKind.COLON):
+        ft = _FIELD_TYPE_ALIASES.get(tokens[0].value)
+        if ft is not None:
+            type_filter = ft
+            prefix_end = tokens[1].end
+
+    has_star = any(t.kind == TokenKind.STAR and t.start >= prefix_end for t in tokens)
+    if not has_star:
+        return ExprColumn(s.strip())
+
+    rest = s[prefix_end:]
+
+    rest_tokens = tokenize(rest)
+    except_pos = next(
+        (i for i, t in enumerate(rest_tokens)
+         if t.kind == TokenKind.WORD and t.value.upper() == 'EXCEPT'),
+        -1,
+    )
+
+    except_patterns: list[str] = []
+    if except_pos >= 0:
+        tail = rest[rest_tokens[except_pos].end:].strip()
+        except_patterns = _parse_except_patterns(tail)
+        expr_str = rest[:rest_tokens[except_pos].start].rstrip()
+    else:
+        expr_str = rest.strip()
+
+    glob_pattern, template = _extract_glob_and_template(expr_str)
+    return GlobTemplateColumn(
+        glob=glob_pattern,
+        type_filter=type_filter,
+        excepts=except_patterns,
+        expr=template,
+    )
+
+
+def _parse_field_list(s: str, label: str = "fields") -> list[ColumnSpec]:
+    raw = [x.strip() for x in _smart_split(s, ",")]
+    if not raw or '' in raw:
+        raise ParseError(f"Empty {label} in: {s}")
+    return [parse_column_spec(f) for f in raw]

@@ -6,10 +6,13 @@ import pytest
 
 from anno_sql_test.errors import ParseError
 from anno_sql_test.models import (
+    AggFunc,
     DualJoinAssertEqual,
     DualJoinAssertNumericDeltaApprox,
     DualJoinAssertNumericRatioApprox,
     DualJoinAssertTemporalApprox,
+    ExprColumn,
+    GlobTemplateColumn,
     MultiAggAssertEqual,
     MultiAggAssertNumericDeltaApprox,
     MultiAggAssertNumericRatioApprox,
@@ -88,7 +91,7 @@ def test_parse_single_assert(tmp_path: Path):
     assert len(case.assertions) == 1
     a = cast(SingleAssertAll, case.assertions[0])
     assert isinstance(a, SingleAssertAll)
-    assert a.predicate == "aaa is not null"
+    assert a.predicate == ExprColumn(expr="aaa is not null")
     assert len(case.sql_statements) == 1
     assert "select aaa from table_a" in case.sql_statements[0]
 
@@ -103,8 +106,8 @@ def test_parse_dual_agg(tmp_path: Path):
     assert len(case.assertions) == 1
     a = cast(MultiAggAssertEqual, case.assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
-    assert a.agg == "count({col})"
-    assert a.fields == ["*"]
+    assert a.agg == AggFunc(func="count({col})")
+    assert a.fields == [GlobTemplateColumn(glob="*")]
     assert len(case.sql_statements) == 2
 
 
@@ -133,7 +136,7 @@ def test_parse_unique_with_multiple_columns(tmp_path: Path):
     case = suite.cases[0]
     a = cast(SingleAssertUnique, case.assertions[0])
     assert isinstance(a, SingleAssertUnique)
-    assert a.fields == ["id", "name"]
+    assert a.fields == [ExprColumn(expr="id"), ExprColumn(expr="name")]
 
 
 def test_parse_equal_with_keys_and_values(tmp_path: Path):
@@ -143,8 +146,8 @@ def test_parse_equal_with_keys_and_values(tmp_path: Path):
     case = suite.cases[0]
     a = cast(DualJoinAssertEqual, case.assertions[0])
     assert isinstance(a, DualJoinAssertEqual)
-    assert a.keys == ["id", "date"]
-    assert a.values == ["amount", "status"]
+    assert a.keys == [ExprColumn(expr="id"), ExprColumn(expr="date")]
+    assert a.values == [ExprColumn(expr="amount"), ExprColumn(expr="status")]
     assert len(case.sql_statements) == 2
 
 
@@ -191,9 +194,9 @@ def test_parse_agg_numeric_ratio_approx(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertNumericRatioApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertNumericRatioApprox)
-    assert a.agg == "sum({col})"
+    assert a.agg == AggFunc(func="sum({col})")
     assert a.ratio == pytest.approx(0.05)
-    assert a.fields == ["amount"]
+    assert a.fields == [ExprColumn(expr="amount")]
 
 
 def test_parse_aggregation_equal_multi_field(tmp_path: Path):
@@ -202,8 +205,8 @@ def test_parse_aggregation_equal_multi_field(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
-    assert a.agg == "sum({col})"
-    assert a.fields == ["a", "b"]
+    assert a.agg == AggFunc(func="sum({col})")
+    assert a.fields == [ExprColumn(expr="a"), ExprColumn(expr="b")]
 
 
 def test_parse_aggregation_equal_expression(tmp_path: Path):
@@ -212,8 +215,8 @@ def test_parse_aggregation_equal_expression(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
-    assert a.agg == "sum({col})"
-    assert a.fields == ["a + b"]
+    assert a.agg == AggFunc(func="sum({col})")
+    assert a.fields == [ExprColumn(expr="a + b")]
 
 
 def test_parse_agg_numeric_ratio_approx_multi_field(tmp_path: Path):
@@ -222,9 +225,9 @@ def test_parse_agg_numeric_ratio_approx_multi_field(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertNumericRatioApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertNumericRatioApprox)
-    assert a.agg == "sum({col})"
+    assert a.agg == AggFunc(func="sum({col})")
     assert a.ratio == pytest.approx(0.05)
-    assert a.fields == ["a", "b"]
+    assert a.fields == [ExprColumn(expr="a"), ExprColumn(expr="b")]
 
 
 def test_parse_numeric_ratio_approx(tmp_path: Path):
@@ -234,8 +237,8 @@ def test_parse_numeric_ratio_approx(tmp_path: Path):
     a = cast(DualJoinAssertNumericRatioApprox, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertNumericRatioApprox)
     assert a.ratio == pytest.approx(0.05)
-    assert a.keys == ["id"]
-    assert a.values == ["total"]
+    assert a.keys == [ExprColumn(expr="id")]
+    assert a.values == [ExprColumn(expr="total")]
 
 
 def test_parse_agg_equal_missing_args(tmp_path: Path):
@@ -294,8 +297,8 @@ def test_parse_equal_expression_values(tmp_path: Path):
     suite = parse_file(p)
     a = cast(DualJoinAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertEqual)
-    assert a.keys == ["id"]
-    assert a.values == ["a + b"]
+    assert a.keys == [ExprColumn(expr="id")]
+    assert a.values == [ExprColumn(expr="a + b")]
 
 
 def test_parse_numeric_ratio_approx_expression_values(tmp_path: Path):
@@ -307,8 +310,8 @@ def test_parse_numeric_ratio_approx_expression_values(tmp_path: Path):
     a = cast(DualJoinAssertNumericRatioApprox, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertNumericRatioApprox)
     assert a.ratio == pytest.approx(0.05)
-    assert a.keys == ["id"]
-    assert a.values == ["a + b", "a - b"]
+    assert a.keys == [ExprColumn(expr="id")]
+    assert a.values == [ExprColumn(expr="a + b"), ExprColumn(expr="a - b")]
 
 
 def test_parse_numeric_ratio_approx_missing_args(tmp_path: Path):
@@ -330,8 +333,8 @@ def test_parse_numeric_delta_approx(tmp_path: Path):
     a = cast(DualJoinAssertNumericDeltaApprox, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertNumericDeltaApprox)
     assert a.delta == pytest.approx(10.5)
-    assert a.keys == ["id"]
-    assert a.values == ["total"]
+    assert a.keys == [ExprColumn(expr="id")]
+    assert a.values == [ExprColumn(expr="total")]
 
 
 def test_parse_numeric_delta_approx_missing_args(tmp_path: Path):
@@ -347,9 +350,9 @@ def test_parse_agg_numeric_delta_approx(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertNumericDeltaApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertNumericDeltaApprox)
-    assert a.agg == "sum({col})"
+    assert a.agg == AggFunc(func="sum({col})")
     assert a.delta == pytest.approx(10.5)
-    assert a.fields == ["amount"]
+    assert a.fields == [ExprColumn(expr="amount")]
 
 
 def test_parse_agg_numeric_delta_approx_missing_args(tmp_path: Path):
@@ -366,8 +369,8 @@ def test_parse_temporal_approx(tmp_path: Path):
     a = cast(DualJoinAssertTemporalApprox, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertTemporalApprox)
     assert a.duration_seconds == pytest.approx(129600.0)
-    assert a.keys == ["id"]
-    assert a.values == ["ts"]
+    assert a.keys == [ExprColumn(expr="id")]
+    assert a.values == [ExprColumn(expr="ts")]
 
 
 def test_parse_temporal_approx_invalid_duration(tmp_path: Path):
@@ -383,9 +386,9 @@ def test_parse_agg_temporal_approx(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertTemporalApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertTemporalApprox)
-    assert a.agg == "min({col})"
+    assert a.agg == AggFunc(func="min({col})")
     assert a.duration_seconds == pytest.approx(129600.0)
-    assert a.fields == ["ts"]
+    assert a.fields == [ExprColumn(expr="ts")]
 
 
 def test_parse_agg_equal_lambda(tmp_path: Path):
@@ -394,8 +397,8 @@ def test_parse_agg_equal_lambda(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
-    assert a.agg == "count(distinct {col})"
-    assert a.fields == ["id"]
+    assert a.agg == AggFunc(func="count(distinct {col})")
+    assert a.fields == [ExprColumn(expr="id")]
 
 
 def test_parse_agg_equal_lambda_multi_field(tmp_path: Path):
@@ -404,8 +407,8 @@ def test_parse_agg_equal_lambda_multi_field(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
-    assert a.agg == "count(distinct {col})"
-    assert a.fields == ["id", "name"]
+    assert a.agg == AggFunc(func="count(distinct {col})")
+    assert a.fields == [ExprColumn(expr="id"), ExprColumn(expr="name")]
 
 
 def test_parse_agg_numeric_ratio_approx_lambda(tmp_path: Path):
@@ -416,9 +419,9 @@ def test_parse_agg_numeric_ratio_approx_lambda(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertNumericRatioApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertNumericRatioApprox)
-    assert a.agg == "count(distinct {col})"
+    assert a.agg == AggFunc(func="count(distinct {col})")
     assert a.ratio == pytest.approx(0.05)
-    assert a.fields == ["amount"]
+    assert a.fields == [ExprColumn(expr="amount")]
 
 
 def test_parse_agg_numeric_delta_approx_lambda(tmp_path: Path):
@@ -429,9 +432,9 @@ def test_parse_agg_numeric_delta_approx_lambda(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertNumericDeltaApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertNumericDeltaApprox)
-    assert a.agg == "count(distinct {col})"
+    assert a.agg == AggFunc(func="count(distinct {col})")
     assert a.delta == pytest.approx(10.5)
-    assert a.fields == ["amount"]
+    assert a.fields == [ExprColumn(expr="amount")]
 
 
 def test_parse_agg_temporal_approx_lambda(tmp_path: Path):
@@ -442,9 +445,9 @@ def test_parse_agg_temporal_approx_lambda(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertTemporalApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertTemporalApprox)
-    assert a.agg == "max({col})"
+    assert a.agg == AggFunc(func="max({col})")
     assert a.duration_seconds == pytest.approx(129600.0)
-    assert a.fields == ["ts"]
+    assert a.fields == [ExprColumn(expr="ts")]
 
 
 def test_parse_agg_equal_lambda_missing_fields(tmp_path: Path):
@@ -483,7 +486,7 @@ def test_parse_assert_any(tmp_path: Path):
     suite = parse_file(p)
     a = cast(SingleAssertAny, suite.cases[0].assertions[0])
     assert isinstance(a, SingleAssertAny)
-    assert a.predicate == "a > 0"
+    assert a.predicate == ExprColumn(expr="a > 0")
 
 
 def test_parse_assert_none(tmp_path: Path):
@@ -492,7 +495,7 @@ def test_parse_assert_none(tmp_path: Path):
     suite = parse_file(p)
     a = cast(SingleAssertNone, suite.cases[0].assertions[0])
     assert isinstance(a, SingleAssertNone)
-    assert a.predicate == "a is null"
+    assert a.predicate == ExprColumn(expr="a is null")
 
 
 def test_parse_dependency_not_found(tmp_path: Path):

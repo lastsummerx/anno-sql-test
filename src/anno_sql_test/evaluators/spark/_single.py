@@ -90,7 +90,7 @@ class BaseSingleDataFrameEvaluator[T: SingleAssertion](
     def _sample_key_columns(self, assertion: T, all_columns: list[str]) -> list[str]:
         pred = getattr(assertion, 'predicate', None)
         if pred:
-            return extract_word_fields([pred], all_columns)
+            return extract_word_fields([pred.expr], all_columns)
         return []
 
 
@@ -166,7 +166,7 @@ class SingleAssertPredicateEvaluator[T: SingleAssertPredicate](
             return None
         filter_cond = reduce(lambda a, b: a | b, conditions, F.lit(False))
 
-        key_cols = extract_word_fields([assertion.predicate], df.columns) or df.columns
+        key_cols = extract_word_fields(predicates, df.columns) or df.columns
         rows = df.filter(filter_cond).select(*key_cols).take(self._sample_count)
         return [row.asDict() for row in rows]
 
@@ -257,8 +257,14 @@ class SingleAssertNotEmptyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertNot
         return [AssertionResult(assertion=assertion, passed=False, message="DataFrame is empty")]
 
 
+@dataclass
+class AssertUniqueContext:
+    dataframe: DataFrame
+    field_names: list[str]
+
+
 class SingleAssertUniqueEvaluator(
-    BaseStepwiseSparkEvaluator[SingleAssertUnique, DataFrame, list[Column]],
+    BaseStepwiseSparkEvaluator[SingleAssertUnique, AssertUniqueContext, list[Column]],
 ):
     COUNT_COL = "_cnt"
     TOTAL_ROWS_COL = "_total_rows"
@@ -274,18 +280,19 @@ class SingleAssertUniqueEvaluator(
             return [("No DataFrames provided", assertion)]
         return []
 
-    def prepare(self, assertion: SingleAssertUnique, dataframes: list[DataFrame]) -> DataFrame:
-        fields = (F.expr(field) for field in assertion.fields)
-        prepared = dataframes[0].groupBy(*fields).agg(F.count(F.lit(1)).alias(self.COUNT_COL))
+    def prepare(self, assertion: SingleAssertUnique, dataframes: list[DataFrame]) -> AssertUniqueContext:
+        field_names = resolve_fields(assertion.fields, dataframes)
+        exprs = [F.expr(f) for f in field_names]
+        prepared = dataframes[0].groupBy(*exprs).agg(F.count(F.lit(1)).alias(self.COUNT_COL))
         if self._sample_count > 0:
             prepared.persist(StorageLevel.DISK_ONLY)
-        return prepared
+        return AssertUniqueContext(dataframe=prepared, field_names=field_names)
 
-    def cleanup(self, prepared: DataFrame) -> None:
+    def cleanup(self, prepared: AssertUniqueContext) -> None:
         if self._sample_count > 0:
-            prepared.unpersist()
+            prepared.dataframe.unpersist()
 
-    def build(self, assertion: SingleAssertUnique, prepared: DataFrame) -> list[Column]:
+    def build(self, assertion: SingleAssertUnique, prepared: AssertUniqueContext) -> list[Column]:
         is_dup = F.col(self.COUNT_COL) > 1
         return [
             F.sum(self.COUNT_COL).alias(self.TOTAL_ROWS_COL),
@@ -294,17 +301,17 @@ class SingleAssertUniqueEvaluator(
             F.count(F.when(is_dup, 1)).alias(self.DUP_GROUPS_COL),
         ]
 
-    def execute(self, prepared: DataFrame, plan: list[Column]) -> Row:
-        return prepared.agg(*plan).collect()[0]
+    def execute(self, prepared: AssertUniqueContext, plan: list[Column]) -> Row:
+        return prepared.dataframe.agg(*plan).collect()[0]
 
     def finalize(
-        self, assertion: SingleAssertUnique, step_result: StepResult[DataFrame, list[Column], Row],
+        self, assertion: SingleAssertUnique, step_result: StepResult[AssertUniqueContext, list[Column], Row],
     ) -> list[AssertionResult]:
         exec_result = step_result.executed
         dup_groups = exec_result[self.DUP_GROUPS_COL]
         if dup_groups == 0:
             return [AssertionResult(assertion=assertion, passed=True)]
-        col_expr = ", ".join(assertion.fields)
+        col_expr = ", ".join(step_result.prepared.field_names)
         pct_groups = dup_groups / exec_result[self.TOTAL_GROUPS_COL] * 100
         pct_rows = exec_result[self.DUP_ROWS_COL] / exec_result[self.TOTAL_ROWS_COL] * 100
         return [AssertionResult(
@@ -317,11 +324,11 @@ class SingleAssertUniqueEvaluator(
         )]
 
     def sample_failure(
-        self, assertion: SingleAssertUnique, step_result: StepResult[DataFrame, list[Column], Row],
+        self, assertion: SingleAssertUnique, step_result: StepResult[AssertUniqueContext, list[Column], Row],
     ) -> list[dict] | None:
         if self._sample_count <= 0:
             return None
-        dup_df = step_result.prepared.filter(F.col(self.COUNT_COL) > 1)
+        dup_df = step_result.prepared.dataframe.filter(F.col(self.COUNT_COL) > 1)
         rows = dup_df.take(self._sample_count)
         return [row.asDict() for row in rows]
 
