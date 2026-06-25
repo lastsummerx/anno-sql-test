@@ -117,6 +117,9 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 | `@assert_join_numeric_ratio_approx` | `<ratio> on <keys> values <vals>` | Join compare: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
 | `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | Join compare: `\|a - b\| <= delta` |
 | `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | Join compare: `\|a - b\| <= duration_seconds` (ISO 8601) |
+| `@assert_rows_equal` | `[<fields>]` | Row-by-row comparison identical across all DataFrames (default fields: `*`) |
+| `@assert_rows_delta_approx` | `<delta> [<fields>]` | Row-by-row approx: `Σ\|a - b\| <= delta` (default fields: `*`) |
+| `@assert_rows_ratio_approx` | `<ratio> [<fields>]` | Row-by-row approx: `Σ\|a - b\| <= ratio * Σ max(\|a\|, \|b\|)` (default fields: `*`) |
 
 > **Note**:
 >

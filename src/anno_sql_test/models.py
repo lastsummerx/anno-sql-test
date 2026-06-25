@@ -60,6 +60,11 @@ class MultiAggAssertion(Assertion):
 
 
 @dataclass
+class DualRowsAssertion(Assertion):
+    fields: list[ColumnSpec]
+
+
+@dataclass
 class SingleAssertPredicate(SingleAssertion):
     predicate: ColumnSpec
 
@@ -112,6 +117,21 @@ class MultiAggAssertNumericDeltaApprox(MultiAggAssertion):
 @dataclass
 class MultiAggAssertTemporalApprox(MultiAggAssertion):
     duration_seconds: float
+
+
+@dataclass
+class DualRowsAssertEqual(DualRowsAssertion):
+    pass
+
+
+@dataclass
+class DualRowsAssertDeltaApprox(DualRowsAssertion):
+    delta: float
+
+
+@dataclass
+class DualRowsAssertRatioApprox(DualRowsAssertion):
+    ratio: float
 
 
 @dataclass

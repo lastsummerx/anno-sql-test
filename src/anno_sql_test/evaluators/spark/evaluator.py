@@ -15,6 +15,9 @@ from anno_sql_test.evaluators.spark._dual_join import (
     DualJoinAssertNumericRatioApproxEvaluator,
     DualJoinAssertTemporalApproxEvaluator,
     DualJoinFusedAssertionEvaluator,
+    DualRowsAssertDeltaApproxEvaluator,
+    DualRowsAssertEqualEvaluator,
+    DualRowsAssertRatioApproxEvaluator,
 )
 from anno_sql_test.evaluators.spark._multi_agg import (
     MultiAggAssertEqualEvaluator,
@@ -39,6 +42,9 @@ from anno_sql_test.models import (
     DualJoinAssertNumericDeltaApprox,
     DualJoinAssertNumericRatioApprox,
     DualJoinAssertTemporalApprox,
+    DualRowsAssertDeltaApprox,
+    DualRowsAssertEqual,
+    DualRowsAssertRatioApprox,
     FusedAssertion,
     MultiAggAssertEqual,
     MultiAggAssertNumericDeltaApprox,
@@ -72,6 +78,9 @@ class SparkAssertionEvaluator(BaseSparkEvaluator[Assertion]):
             (DualJoinAssertNumericRatioApprox, DualJoinAssertNumericRatioApproxEvaluator(sample_count=sample_count)),
             (DualJoinAssertNumericDeltaApprox, DualJoinAssertNumericDeltaApproxEvaluator(sample_count=sample_count)),
             (DualJoinAssertTemporalApprox, DualJoinAssertTemporalApproxEvaluator(sample_count=sample_count)),
+            (DualRowsAssertEqual, DualRowsAssertEqualEvaluator(sample_count=sample_count)),
+            (DualRowsAssertDeltaApprox, DualRowsAssertDeltaApproxEvaluator(sample_count=sample_count)),
+            (DualRowsAssertRatioApprox, DualRowsAssertRatioApproxEvaluator(sample_count=sample_count)),
         ]
         self._handlers: dict[type[Assertion], BaseSparkEvaluator[Assertion]] = {
             k: cast(BaseSparkEvaluator[Assertion], v)

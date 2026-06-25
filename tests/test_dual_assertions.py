@@ -8,6 +8,9 @@ from anno_sql_test.models import (
     DualJoinAssertNumericDeltaApprox,
     DualJoinAssertNumericRatioApprox,
     DualJoinAssertTemporalApprox,
+    DualRowsAssertDeltaApprox,
+    DualRowsAssertEqual,
+    DualRowsAssertRatioApprox,
     ExprColumn,
     FieldType,
     GlobTemplateColumn,
@@ -415,6 +418,99 @@ def test_temporal_approx_non_temporal_fails():
     )
     assert result.passed is False
     assert "not temporal" in result.message
+
+
+def test_rows_equal_all_pass():
+    df1 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
+    df2 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
+    result = evaluator.evaluate(
+        DualRowsAssertEqual(fields=[GlobTemplateColumn(glob="*")]),
+        [df1, df2],
+    )
+    assert result.passed is True
+
+
+def test_rows_equal_all_fail():
+    df1 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
+    df2 = spark.createDataFrame([(1, "a"), (1, "a"), (2, "b")], ["id", "name"])
+    result = evaluator.evaluate(
+        DualRowsAssertEqual(fields=[GlobTemplateColumn(glob="*")]),
+        [df1, df2],
+    )
+    assert result.passed is False
+
+
+def test_rows_equal_specific_fields_pass():
+    df1 = spark.createDataFrame([(1, "a", 100), (2, "b", 200)], ["id", "name", "amt"])
+    df2 = spark.createDataFrame([(1, "x", 100), (2, "y", 200)], ["id", "name", "amt"])
+    result = evaluator.evaluate(
+        DualRowsAssertEqual(fields=[ExprColumn(expr="id")]),
+        [df1, df2],
+    )
+    assert result.passed is True
+
+
+def test_rows_equal_specific_fields_fail():
+    df1 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
+    df2 = spark.createDataFrame([(1, "a"), (1, "x")], ["id", "name"])
+    result = evaluator.evaluate(
+        DualRowsAssertEqual(fields=[ExprColumn(expr="id")]),
+        [df1, df2],
+    )
+    assert result.passed is False
+
+
+def test_rows_equal_requires_two_dfs():
+    result = evaluator.evaluate(
+        DualRowsAssertEqual(fields=[ExprColumn(expr="id")]),
+        [
+            spark.createDataFrame([(1,)], ["id"]),
+            spark.createDataFrame([(1,)], ["id"]),
+            spark.createDataFrame([(1,)], ["id"]),
+        ],
+    )
+    assert result.passed is False
+    assert "exactly 2" in result.message
+
+
+def test_rows_delta_approx_pass():
+    df1 = spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ["id", "name"])
+    df2 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
+    result = evaluator.evaluate(
+        DualRowsAssertDeltaApprox(fields=[ExprColumn(expr="id")], delta=1),
+        [df1, df2],
+    )
+    assert result.passed is True
+
+
+def test_rows_delta_approx_fail():
+    df1 = spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ["id", "name"])
+    df2 = spark.createDataFrame([(1, "a")], ["id", "name"])
+    result = evaluator.evaluate(
+        DualRowsAssertDeltaApprox(fields=[ExprColumn(expr="id")], delta=1),
+        [df1, df2],
+    )
+    assert result.passed is False
+
+
+def test_rows_ratio_approx_pass():
+    df1 = spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ["id", "name"])
+    df2 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
+    result = evaluator.evaluate(
+        DualRowsAssertRatioApprox(fields=[ExprColumn(expr="id")], ratio=0.5),
+        [df1, df2],
+    )
+    assert result.passed is True
+
+
+def test_rows_ratio_approx_fail():
+    df1 = spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ["id", "name"])
+    df2 = spark.createDataFrame([(1, "a")], ["id", "name"])
+    result = evaluator.evaluate(
+        DualRowsAssertRatioApprox(fields=[ExprColumn(expr="id")], ratio=0.5),
+        [df1, df2],
+    )
+    assert result.passed is False
 
 
 def test_dual_join_equal_failure_sample():

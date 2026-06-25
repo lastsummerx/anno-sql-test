@@ -11,6 +11,9 @@ from anno_sql_test.models import (
     DualJoinAssertNumericDeltaApprox,
     DualJoinAssertNumericRatioApprox,
     DualJoinAssertTemporalApprox,
+    DualRowsAssertDeltaApprox,
+    DualRowsAssertEqual,
+    DualRowsAssertRatioApprox,
     ExprColumn,
     GlobTemplateColumn,
     MultiAggAssertEqual,
@@ -496,6 +499,92 @@ def test_parse_assert_none(tmp_path: Path):
     a = cast(SingleAssertNone, suite.cases[0].assertions[0])
     assert isinstance(a, SingleAssertNone)
     assert a.predicate == ExprColumn(expr="a is null")
+
+
+def test_parse_rows_equal_default_fields(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_rows_equal\nselect 1;\nselect 2;")
+    suite = parse_file(p)
+    a = cast(DualRowsAssertEqual, suite.cases[0].assertions[0])
+    assert isinstance(a, DualRowsAssertEqual)
+    assert a.fields == [GlobTemplateColumn(glob="*")]
+
+
+def test_parse_rows_equal_with_fields(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_rows_equal a, b\nselect 1;\nselect 2;")
+    suite = parse_file(p)
+    a = cast(DualRowsAssertEqual, suite.cases[0].assertions[0])
+    assert isinstance(a, DualRowsAssertEqual)
+    assert a.fields == [ExprColumn(expr="a"), ExprColumn(expr="b")]
+
+
+def test_parse_rows_delta_approx_default_fields(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_rows_delta_approx 0.5\nselect 1;\nselect 2;")
+    suite = parse_file(p)
+    a = cast(DualRowsAssertDeltaApprox, suite.cases[0].assertions[0])
+    assert isinstance(a, DualRowsAssertDeltaApprox)
+    assert a.delta == pytest.approx(0.5)
+    assert a.fields == [GlobTemplateColumn(glob="*")]
+
+
+def test_parse_rows_delta_approx_with_fields(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_rows_delta_approx 10.5 a, b\nselect 1;\nselect 2;")
+    suite = parse_file(p)
+    a = cast(DualRowsAssertDeltaApprox, suite.cases[0].assertions[0])
+    assert isinstance(a, DualRowsAssertDeltaApprox)
+    assert a.delta == pytest.approx(10.5)
+    assert a.fields == [ExprColumn(expr="a"), ExprColumn(expr="b")]
+
+
+def test_parse_rows_ratio_approx_default_fields(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_rows_ratio_approx 0.05\nselect 1;\nselect 2;")
+    suite = parse_file(p)
+    a = cast(DualRowsAssertRatioApprox, suite.cases[0].assertions[0])
+    assert isinstance(a, DualRowsAssertRatioApprox)
+    assert a.ratio == pytest.approx(0.05)
+    assert a.fields == [GlobTemplateColumn(glob="*")]
+
+
+def test_parse_rows_ratio_approx_with_fields(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_rows_ratio_approx 0.05 a, b\nselect 1;\nselect 2;")
+    suite = parse_file(p)
+    a = cast(DualRowsAssertRatioApprox, suite.cases[0].assertions[0])
+    assert isinstance(a, DualRowsAssertRatioApprox)
+    assert a.ratio == pytest.approx(0.05)
+    assert a.fields == [ExprColumn(expr="a"), ExprColumn(expr="b")]
+
+
+def test_parse_rows_delta_approx_missing_delta(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_rows_delta_approx\nselect 1;\nselect 2;")
+    with pytest.raises(ParseError, match="Expected.*delta"):
+        parse_file(p)
+
+
+def test_parse_rows_ratio_approx_missing_ratio(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_rows_ratio_approx\nselect 1;\nselect 2;")
+    with pytest.raises(ParseError, match="Expected.*ratio"):
+        parse_file(p)
+
+
+def test_parse_rows_delta_approx_invalid_delta(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_rows_delta_approx bad\nselect 1;\nselect 2;")
+    with pytest.raises(ParseError, match="Invalid delta"):
+        parse_file(p)
+
+
+def test_parse_rows_ratio_approx_invalid_ratio(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_rows_ratio_approx bad\nselect 1;\nselect 2;")
+    with pytest.raises(ParseError, match="Invalid ratio"):
+        parse_file(p)
 
 
 def test_parse_dependency_not_found(tmp_path: Path):

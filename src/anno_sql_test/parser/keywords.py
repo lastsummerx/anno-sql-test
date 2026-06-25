@@ -11,6 +11,9 @@ from anno_sql_test.models import (
     DualJoinAssertNumericDeltaApprox,
     DualJoinAssertNumericRatioApprox,
     DualJoinAssertTemporalApprox,
+    DualRowsAssertDeltaApprox,
+    DualRowsAssertEqual,
+    DualRowsAssertRatioApprox,
     MultiAggAssertEqual,
     MultiAggAssertNumericDeltaApprox,
     MultiAggAssertNumericRatioApprox,
@@ -195,6 +198,40 @@ class DualJoinAssertTemporalKeyword(_BaseDualJoinAssertKeyword):
         return DualJoinAssertTemporalApprox(keys=keys, values=vals, duration_seconds=duration_seconds)
 
 
+class _BaseDualRowsAssertKeyword(AssertKeyword):
+    @staticmethod
+    def _parse_rows_fields(rest: str) -> list[ColumnSpec]:
+        rest = rest.strip()
+        if not rest:
+            return [parse_column_spec("*")]
+        return _parse_field_list(rest)
+
+
+class DualRowsAssertEqualKeyword(_BaseDualRowsAssertKeyword):
+    def build(self, parse_input: ParseInput) -> Assertion:
+        return DualRowsAssertEqual(fields=self._parse_rows_fields(parse_input.rest))
+
+
+class DualRowsAssertNumericDeltaKeyword(_BaseDualRowsAssertKeyword):
+    def build(self, parse_input: ParseInput) -> Assertion:
+        parts = _smart_split(parse_input.rest.strip(), r'\s+', 1)
+        if not parts or not parts[0]:
+            raise ParseError(f"Expected '<delta> [fields]' in: {parse_input.source}")
+        delta = _parse_float(parts[0], "delta", parse_input.source)
+        fields = self._parse_rows_fields(parts[1] if len(parts) > 1 else "")
+        return DualRowsAssertDeltaApprox(delta=delta, fields=fields)
+
+
+class DualRowsAssertNumericRatioKeyword(_BaseDualRowsAssertKeyword):
+    def build(self, parse_input: ParseInput) -> Assertion:
+        parts = _smart_split(parse_input.rest.strip(), r'\s+', 1)
+        if not parts or not parts[0]:
+            raise ParseError(f"Expected '<ratio> [fields]' in: {parse_input.source}")
+        ratio = _parse_float(parts[0], "ratio", parse_input.source)
+        fields = self._parse_rows_fields(parts[1] if len(parts) > 1 else "")
+        return DualRowsAssertRatioApprox(ratio=ratio, fields=fields)
+
+
 class DependencyKeyword(AnnotationKeyword[list[str]]):
     def build(self, parse_input: ParseInput) -> list[str]:
         targets = parse_input.rest.split() if parse_input.rest else []
@@ -237,6 +274,9 @@ _KEYWORD_MAP: dict[str, AnnotationKeyword] = {
     "assert_join_numeric_ratio_approx": DualJoinAssertNumericRatioKeyword(),
     "assert_join_numeric_delta_approx": DualJoinAssertNumericDeltaKeyword(),
     "assert_join_temporal_approx": DualJoinAssertTemporalKeyword(),
+    "assert_rows_equal": DualRowsAssertEqualKeyword(),
+    "assert_rows_delta_approx": DualRowsAssertNumericDeltaKeyword(),
+    "assert_rows_ratio_approx": DualRowsAssertNumericRatioKeyword(),
     "dependency": DependencyKeyword(),
     "var": VarKeyword(),
     "test": TestKeyword(),

@@ -38,6 +38,11 @@ from anno_sql_test.models import (
     DualJoinAssertNumericDeltaApprox,
     DualJoinAssertNumericRatioApprox,
     DualJoinAssertTemporalApprox,
+    DualRowsAssertDeltaApprox,
+    DualRowsAssertEqual,
+    DualRowsAssertion,
+    DualRowsAssertRatioApprox,
+    ExprColumn,
     FusedAssertion,
 )
 
@@ -296,6 +301,115 @@ class DualJoinAssertTemporalApproxEvaluator(BaseDualJoinAssertEvaluator[DualJoin
 
     def get_type_checker(self):
         return _check_temporal
+
+
+class BaseRowsAssertEvaluator[T: DualRowsAssertion](
+    BaseStepwiseSparkEvaluator[T, DualJoinContext, list[Column]],
+):
+    _COUNT_COL = "_cnt"
+    _TOTAL_ROWS_COL = "_total_rows"
+    _TOTAL_VIOLATED_ROWS_COL = "_total_violated_rows"
+
+    def __init__(self, sample_count: int = 0):
+        self._sample_count = sample_count
+        self._join_evaluator = DualJoinAssertEqualEvaluator(sample_count)
+
+    @abstractmethod
+    def _failure_message(self, assertion: T, total_count: int, total_violated: int) -> str | None:
+        ...
+
+    def _convert_assertion(self, assertion: T) -> DualJoinAssertEqual:
+        return DualJoinAssertEqual(keys=assertion.fields, values=[ExprColumn(expr=self._COUNT_COL)])
+
+    def validate(self, assertion: Any, dataframes: list[DataFrame]) -> list[tuple[str, Assertion]]:
+        if len(dataframes) != 2:
+            return [(f"Expected exactly 2 DataFrames, got {len(dataframes)}", assertion)]
+        return []
+
+    def prepare(self, assertion: Any, dataframes: list[DataFrame]) -> DualJoinContext:
+        self.logger.debug("Preparing %s: fields=%s", type(assertion).__name__, assertion.fields)
+        fields = resolve_fields(assertion.fields, dataframes)
+        if not fields:
+            fields = sorted(set(dataframes[0].columns).intersection(dataframes[1].columns))
+        field_specs: list[ColumnSpec] = [ExprColumn(expr=f) for f in fields]
+        values = [NamedColumn(name=self._COUNT_COL, column=F.col(self._COUNT_COL))]
+        left_agg = dataframes[0].groupBy(*fields).agg(F.count(F.lit(1)).alias(self._COUNT_COL))
+        right_agg = dataframes[1].groupBy(*fields).agg(F.count(F.lit(1)).alias(self._COUNT_COL))
+        ctx = BaseDualJoinAssertEvaluator.prepare_shared([left_agg, right_agg], field_specs, values)
+        if self._sample_count > 0:
+            ctx.dataframe.persist(StorageLevel.DISK_ONLY)
+        return ctx
+
+    def build(self, assertion: Any, prepared: DualJoinContext) -> list[Column]:
+        join_assertion = self._convert_assertion(assertion)
+        rst = self._join_evaluator.build(join_assertion, prepared)
+        left_count = F.expr(f"coalesce({BaseDualJoinAssertEvaluator.LEFT_DF_ALIAS}.{self._COUNT_COL}, 0)")
+        right_count = F.expr(f"coalesce({BaseDualJoinAssertEvaluator.RIGHT_DF_ALIAS}.{self._COUNT_COL}, 0)")
+        rst.append(F.sum(F.greatest(left_count, right_count)).alias(self._TOTAL_ROWS_COL))
+        rst.append(F.sum(F.abs(left_count - right_count)).alias(self._TOTAL_VIOLATED_ROWS_COL))
+        return rst
+
+    def execute(self, prepared: DualJoinContext, plan: list[Column]) -> Row:
+        return self._join_evaluator.execute(prepared, plan)
+
+    def finalize(
+        self, assertion: Any,
+        step_result: StepResult[DualJoinContext, list[Column], Row],
+    ) -> list[AssertionResult]:
+        exec_result = step_result.executed
+        total_count = int(exec_result[self._TOTAL_ROWS_COL])
+        total_violated = int(exec_result[self._TOTAL_VIOLATED_ROWS_COL])
+        msg = self._failure_message(assertion, total_count, total_violated)
+        if msg is None:
+            return [AssertionResult(assertion=assertion, passed=True)]
+        return [AssertionResult(assertion=assertion, passed=False, message=msg)]
+
+    def cleanup(self, prepared: DualJoinContext) -> None:
+        return self._join_evaluator.cleanup(prepared)
+
+    def sample_failure(
+        self, assertion: Any,
+        step_result: StepResult[DualJoinContext, list[Column], Row],
+    ) -> list[dict] | None:
+        join_assertion = self._convert_assertion(assertion)
+        return self._join_evaluator.sample_failure(join_assertion, step_result)
+
+
+class DualRowsAssertEqualEvaluator(BaseRowsAssertEvaluator[DualRowsAssertEqual]):
+    def _failure_message(
+        self, assertion: DualRowsAssertEqual, total_count: int, total_violated: int,
+    ) -> str | None:
+        if total_violated == 0:
+            return None
+        return (
+            f"{total_violated} of {total_count} group(s) "
+            f"({total_violated / total_count * 100:.1f}%) have count mismatch"
+        )
+
+
+class DualRowsAssertDeltaApproxEvaluator(BaseRowsAssertEvaluator[DualRowsAssertDeltaApprox]):
+    def _failure_message(
+        self, assertion: DualRowsAssertDeltaApprox, total_count: int, total_violated: int,
+    ) -> str | None:
+        if total_violated <= assertion.delta:
+            return None
+        return (
+            f"{total_violated} group(s) with count mismatch exceeds delta {assertion.delta:.0f}, "
+            f"affecting {total_violated / total_count * 100:.1f}% of {total_count} group(s)"
+        )
+
+
+class DualRowsAssertRatioApproxEvaluator(BaseRowsAssertEvaluator[DualRowsAssertRatioApprox]):
+    def _failure_message(
+        self, assertion: DualRowsAssertRatioApprox, total_count: int, total_violated: int,
+    ) -> str | None:
+        if total_count == 0 or total_violated / total_count <= assertion.ratio:
+            return None
+        return (
+            f"{total_violated} of {total_count} group(s) "
+            f"({total_violated / total_count * 100:.1f}%) with count mismatch "
+            f"exceeds ratio {assertion.ratio:.0%}"
+        )
 
 
 class DualJoinFusedAssertionEvaluator(

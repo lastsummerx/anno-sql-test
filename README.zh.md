@@ -116,6 +116,9 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 | `@assert_join_numeric_ratio_approx` | `<ratio> on <keys> values <vals>` | 连接比较：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
 | `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | 连接比较：`\|a - b\| <= delta` |
 | `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | 连接比较：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
+| `@assert_rows_equal` | `[<fields>]` | 逐行计数必须完全一致（默认 fields: `*`） |
+| `@assert_rows_delta_approx` | `<delta> [<fields>]` | 逐行计数比较：`Σ\|left_cnt - right_cnt\| ≤ delta`（默认 fields: `*`） |
+| `@assert_rows_ratio_approx` | `<ratio> [<fields>]` | 逐行计数比较：`Σ\|left_cnt - right_cnt\| ≤ ratio × Σ max(left_cnt, right_cnt)`（默认 fields: `*`） |
 
 > **说明**：
 >
