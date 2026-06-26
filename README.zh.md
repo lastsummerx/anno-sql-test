@@ -116,22 +116,23 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 | `@assert_join_numeric_ratio_approx` | `<ratio> on <keys> values <vals>` | 连接比较：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
 | `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | 连接比较：`\|a - b\| <= delta` |
 | `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | 连接比较：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
-| `@assert_rows_equal` | `[<fields>]` | 逐行计数必须完全一致（默认 fields: `*`） |
-| `@assert_rows_delta_approx` | `<delta> [<fields>]` | 逐行计数比较：`Σ\|left_cnt - right_cnt\| ≤ delta`（默认 fields: `*`） |
-| `@assert_rows_ratio_approx` | `<ratio> [<fields>]` | 逐行计数比较：`Σ\|left_cnt - right_cnt\| ≤ ratio × Σ max(left_cnt, right_cnt)`（默认 fields: `*`） |
+| `@assert_rows_equal` | `[<fields>]` | 逐行计数必须完全一致（默认 fields: `columns(*)`） |
+| `@assert_rows_delta_approx` | `<delta> [<fields>]` | 逐行计数比较：`Σ\|left_cnt - right_cnt\| ≤ delta`（默认 fields: `columns(*)`） |
+| `@assert_rows_ratio_approx` | `<ratio> [<fields>]` | 逐行计数比较：`Σ\|left_cnt - right_cnt\| ≤ ratio × Σ max(left_cnt, right_cnt)`（默认 fields: `columns(*)`） |
 
 > **说明**：
 >
 > - `<agg>` 支持简单聚合函数（`count`、`sum`、`min`、`max`），也支持单参数 lambda 表达式：`(x -> count(distinct x))`、`(col -> percentile_approx(col, 0.5))`。
 > - `<fields>`、`<predicate>`、`<key>`、`<value>` 均支持 SQL 表达式。
 >
-> **`*` 通配符支持**：
+> **`columns(*)` 通配符支持**：
 >
-> - `*` — 所有共同列
-> - `*_cnt`、`prefix*`、`a*b` — 通配符模式匹配列名
-> - `numeric:*`、`string:*`、`temporal:*` — 指定数据类型的列
-> - 组合使用：`numeric:*_cnt` — 数值类型中匹配 `*_cnt` 的列
-> - 在谓词中使用（如 `@assert_all`）：`numeric:* is not null`、`*_cnt is not null`、`nvl(*, '@') != ''`
+> - `columns(*)` — DataFrame 中的所有公共列
+> - `columns(*_cnt)` — 按列名后缀进行通配匹配（glob 模式）
+> - `numeric:columns(*)` — 指定数据类型的列
+> - `numeric:columns(*_cnt)` — 数据类型过滤与列名模式匹配的组合
+> - 在断言条件中使用：`numeric:columns(*) is not null`、`columns(*_cnt) > 0`
+> - EXCEPT 子句：`columns(* except (col1, col2))` 或 `columns(* except col1, col2)`
 >
 > `<duration>` 使用 ISO 8601 格式（如 `P1DT12H`）。
 >
@@ -154,19 +155,18 @@ src/anno_sql_test/
 ├── cli.py          # CLI 入口与参数解析（argparse）
 ├── discover.py     # 递归发现 SQL 文件
 ├── models.py       # 数据模型（测试套件 / 用例 / 断言 / 结果 / 非测试块）
-├── keywords.py     # 断言关键字定义 & 关键字映射表
 ├── log.py          # 日志配置（可选 verbose 级别）
 ├── parser/         # SQL 注解解析
 │   ├── __init__.py # 公开 API: parse_file, parse_suite
-│   ├── _tokenizer.py  # 分词器 & 辅助函数（ISO 时长解析、智能分割等）
-│   └── _parser.py     # 解析核心：注解、@test / @non_test / 自动 SQL
+│   ├── _parser.py     # 解析核心：注解、@test / @non_test / 自动 SQL
+|   ├── keywords.py    # 断言关键字定义 & 关键字映射表
+│   └── _utils.py      # 分词器 & 辅助函数（ISO 时长解析、通配符解析等）
 ├── runner.py       # 测试执行与依赖拓扑排序
 ├── reporter.py     # 报告输出（控制台 / TXT / Excel）
 ├── errors.py       # 自定义异常
 └── evaluators/
     ├── base.py           # 断言求值器抽象基类 & 分步求值 mixin
     ├── optimizer.py      # 断言融合优化器（group_as_fused）
-    ├── _field_parser.py  # 字段表达式分词器（通配符、类型前缀）
     └── spark/
         ├── __init__.py
         ├── evaluator.py  # 断言派发器（单条 & 融合）
@@ -174,7 +174,7 @@ src/anno_sql_test/
         ├── _single.py    # 单 DataFrame 断言（all/any/none/empty/unique + 融合）
         ├── _multi_agg.py # 多 DataFrame 聚合断言
         ├── _dual_join.py # 双 DataFrame 连接断言
-        └── _util.py      # 工具函数（字段解析、类型检查器）
+        └── _utils.py     # 工具函数（字段解析、类型检查器）
 ```
 
 ### 断言求值器流水线

@@ -14,6 +14,7 @@ from anno_sql_test.models import (
     DualRowsAssertDeltaApprox,
     DualRowsAssertEqual,
     DualRowsAssertRatioApprox,
+    GlobTemplateColumn,
     MultiAggAssertEqual,
     MultiAggAssertNumericDeltaApprox,
     MultiAggAssertNumericRatioApprox,
@@ -203,7 +204,7 @@ class _BaseDualRowsAssertKeyword(AssertKeyword):
     def _parse_rows_fields(rest: str) -> list[ColumnSpec]:
         rest = rest.strip()
         if not rest:
-            return [parse_column_spec("*")]
+            return [GlobTemplateColumn(glob="*")]
         return _parse_field_list(rest)
 
 

@@ -117,22 +117,23 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 | `@assert_join_numeric_ratio_approx` | `<ratio> on <keys> values <vals>` | Join compare: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
 | `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | Join compare: `\|a - b\| <= delta` |
 | `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | Join compare: `\|a - b\| <= duration_seconds` (ISO 8601) |
-| `@assert_rows_equal` | `[<fields>]` | Row-by-row comparison identical across all DataFrames (default fields: `*`) |
-| `@assert_rows_delta_approx` | `<delta> [<fields>]` | Row-by-row approx: `Σ\|a - b\| <= delta` (default fields: `*`) |
-| `@assert_rows_ratio_approx` | `<ratio> [<fields>]` | Row-by-row approx: `Σ\|a - b\| <= ratio * Σ max(\|a\|, \|b\|)` (default fields: `*`) |
+| `@assert_rows_equal` | `[<fields>]` | Row-by-row comparison identical across all DataFrames (default fields: `columns(*)`) |
+| `@assert_rows_delta_approx` | `<delta> [<fields>]` | Row-by-row approx: `Σ\|a - b\| <= delta` (default fields: `columns(*)`) |
+| `@assert_rows_ratio_approx` | `<ratio> [<fields>]` | Row-by-row approx: `Σ\|a - b\| <= ratio * Σ max(\|a\|, \|b\|)` (default fields: `columns(*)`) |
 
 > **Note**:
 >
 > - `<agg>` supports simple aggregation functions (`count`, `sum`, `min`, `max`) and single-parameter lambda expressions: `(x -> count(distinct x))`, `(col -> percentile_approx(col, 0.5))`.
 > - `<fields>`, `<predicate>`, `<key>`, and `<value>` all support SQL expressions.
 >
-> **`*` wildcard support**:
+> **`columns(*)` wildcard support**:
 >
-> - `*` — all common columns across DataFrames
-> - `*_cnt`, `prefix*`, `a*b` — glob pattern matching column names
-> - `numeric:*`, `string:*`, `temporal:*` — columns of a specific data type
-> - Combined: `numeric:*_cnt` — numeric columns matching `*_cnt`
-> - In predicates (e.g. `@assert_all`): `numeric:* is not null`, `*_cnt is not null`, `nvl(*, '@') != ''`
+> - `columns(*)` — all common columns across DataFrames
+> - `columns(*_cnt)` — suffix glob pattern matching column names
+> - `numeric:columns(*)` — columns of a specific data type
+> - `numeric:columns(*_cnt)` — combined type filter and name pattern
+> - In predicates: `numeric:columns(*) is not null`, `columns(*_cnt) > 0`
+> - EXCEPT clause: `columns(* except (col1, col2))` or `columns(* except col1, col2)`
 >
 > `<duration>` uses ISO 8601 format (e.g. `P1DT12H`).
 >
@@ -155,19 +156,18 @@ src/anno_sql_test/
 ├── cli.py          # CLI entry & argument parsing (argparse)
 ├── discover.py     # Recursive SQL file discovery
 ├── models.py       # Data models (suite, case, assertion, result, non-test block)
-├── keywords.py     # Assertion keyword definitions & keyword map
 ├── log.py          # Logging configuration (optional verbose levels)
 ├── parser/         # SQL annotation parsing
 │   ├── __init__.py # Public API: parse_file, parse_suite
-│   ├── _tokenizer.py  # Tokenizer & helpers (ISO duration, smart split, etc.)
-│   └── _parser.py     # Parser core: hints, @test / @non_test / auto SQL
+│   ├── _parser.py     # Parser core: hints, @test / @non_test / auto SQL
+|   ├── keywords.py    # Assertion keyword definitions & keyword map
+│   └── _utils.py      # Tokenizer & helpers (ISO duration, glob parsing, etc.)
 ├── runner.py       # Test execution with dependency resolution
 ├── reporter.py     # Report output (console, TXT, Excel)
 ├── errors.py       # Custom exceptions
 └── evaluators/
     ├── base.py           # Abstract assertion evaluator base & stepwise evaluation mixin
     ├── optimizer.py      # Assertion fusion optimizer (group_as_fused)
-    ├── _field_parser.py  # Field expression tokenizer (glob, type-prefix)
     └── spark/
         ├── __init__.py
         ├── evaluator.py  # Assertion dispatcher (single & fused)
@@ -175,7 +175,7 @@ src/anno_sql_test/
         ├── _single.py    # Single-DataFrame assertions (all/any/none/empty/unique + fused)
         ├── _multi_agg.py # Multi-DataFrame aggregation assertions
         ├── _dual_join.py # Dual-DataFrame join assertions
-        └── _util.py      # Utility functions (field resolution, type checkers)
+        └── _utils.py     # Utility functions (field resolution, type checkers)
 ```
 
 ### Assertion Evaluator Pipeline

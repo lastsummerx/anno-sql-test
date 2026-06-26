@@ -38,7 +38,7 @@ SINGLE_FILE = textwrap.dedent("""\
 
 DUAL_FILE = textwrap.dedent("""\
     -- @TEST test_agg
-    -- @assert_agg_equal count *
+    -- @assert_agg_equal count columns(*)
     select aaa from table_a;
 
     select aaa from table_b;

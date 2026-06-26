@@ -146,7 +146,17 @@ class TokenKind(Enum):
     STAR = 'star'
     COLON = 'colon'
     WORD = 'word'
+    LPAREN = 'lparen'  # (
+    RPAREN = 'rparen'  # )
     OTHER = 'other'
+
+
+_SINGLE_CHAR_MAP = {
+    '*': TokenKind.STAR,
+    ':': TokenKind.COLON,
+    '(': TokenKind.LPAREN,
+    ')': TokenKind.RPAREN,
+}
 
 
 @dataclass
@@ -180,11 +190,8 @@ def tokenize(s: str) -> list[Token]:
             end = skip_string(s, i)
             tokens.append(Token(TokenKind.STRING, s[i:end], i, end))
             i = end
-        elif s[i] == '*':
-            tokens.append(Token(TokenKind.STAR, '*', i, i + 1))
-            i += 1
-        elif s[i] == ':':
-            tokens.append(Token(TokenKind.COLON, ':', i, i + 1))
+        elif s[i] in _SINGLE_CHAR_MAP:
+            tokens.append(Token(_SINGLE_CHAR_MAP[s[i]], s[i], i, i + 1))
             i += 1
         elif m := _WORD_CHARS.match(s, i):
             tokens.append(Token(TokenKind.WORD, m.group(), i, m.end()))
@@ -196,9 +203,6 @@ def tokenize(s: str) -> list[Token]:
 
 
 def _extract_glob_and_template(expr: str) -> tuple[str, str]:
-    if re.match(r'^[\w.*]+$', expr):
-        return expr, '{col}'
-
     tokens = tokenize(expr)
     star_idx = next((i for i, t in enumerate(tokens) if t.kind == TokenKind.STAR), None)
     if star_idx is None:
@@ -230,9 +234,93 @@ def _parse_except_patterns(s: str) -> list[str]:
     return [p.strip() for p in raw.split(',') if p.strip()]
 
 
-def parse_column_spec(s: str) -> ColumnSpec:
-    tokens = tokenize(s)
+def _find_matching_paren(tokens: list, start: int) -> int | None:
+    """
+    Given a list of tokens and the index of an LPAREN token,
+    return the index of the matching RPAREN token, or None if not found.
+    """
+    if start >= len(tokens) or tokens[start].kind != TokenKind.LPAREN:
+        return None
+    depth = 1
+    for i in range(start + 1, len(tokens)):
+        if tokens[i].kind == TokenKind.LPAREN:
+            depth += 1
+        elif tokens[i].kind == TokenKind.RPAREN:
+            depth -= 1
+            if depth == 0:
+                return i
+    return None
 
+
+def _find_columns(expr: str) -> tuple[int, int, str] | None:
+    """
+    Locate a top-level COLUMNS(...) call in the expression.
+    Returns (start, end, inner_text) or None if not found.
+    """
+    tokens = tokenize(expr)
+    for i, t in enumerate(tokens):
+        if (t.kind == TokenKind.WORD and t.value.upper() == 'COLUMNS'
+                and i + 1 < len(tokens) and tokens[i + 1].kind == TokenKind.LPAREN):
+            j = _find_matching_paren(tokens, i + 1)
+            if j is None:
+                return None
+            inner = expr[tokens[i + 2].start:tokens[j].start].strip()
+            return t.start, tokens[j].end, inner
+    return None
+
+
+def _parse_inner_except(inner: str) -> tuple[str, list[str]]:
+    """
+    Parse EXCEPT clause inside a COLUMNS() inner expression.
+    Returns (inner_expr_without_except, list_of_except_patterns).
+    """
+    inner_tokens = tokenize(inner)
+    except_pos = next(
+        (i for i, t in enumerate(inner_tokens)
+         if t.kind == TokenKind.WORD and t.value.upper() == 'EXCEPT'),
+        -1,
+    )
+    if except_pos == -1:
+        return inner.strip(), []
+
+    after = inner_tokens[except_pos + 1:]
+    except_arg_start = inner_tokens[except_pos].end
+
+    # Determine the end of the EXCEPT argument
+    if after and after[0].kind == TokenKind.LPAREN:
+        j = _find_matching_paren(after, 0)
+        except_arg_end = after[j].end if j is not None else len(inner)
+    else:
+        # No parentheses: grab until the next unbalanced RPAREN or end
+        depth = 0
+        i = 0
+        while i < len(after):
+            if after[i].kind == TokenKind.LPAREN:
+                depth += 1
+            elif after[i].kind == TokenKind.RPAREN:
+                if depth == 0:
+                    break
+                depth -= 1
+            i += 1
+        except_arg_end = after[i].start if i < len(after) else len(inner)
+
+    tail = inner[except_arg_start:except_arg_end].strip()
+    except_patterns = _parse_except_patterns(tail)
+
+    # Remove the EXCEPT clause from the inner expression
+    inner_expr = (
+        inner[:inner_tokens[except_pos].start].rstrip()
+        + inner[except_arg_end:]
+    ).strip()
+    return inner_expr, except_patterns
+
+
+def parse_column_spec(s: str) -> ColumnSpec:
+    raw = s.strip()
+
+    tokens = tokenize(raw)
+
+    # Optional type filter prefix (e.g. "num: ...")
     type_filter = None
     prefix_end = 0
     if (len(tokens) >= 2 and tokens[0].kind == TokenKind.WORD
@@ -242,30 +330,31 @@ def parse_column_spec(s: str) -> ColumnSpec:
             type_filter = ft
             prefix_end = tokens[1].end
 
-    has_star = any(t.kind == TokenKind.STAR and t.start >= prefix_end for t in tokens)
-    if not has_star:
-        return ExprColumn(s.strip())
+    rest = raw[prefix_end:]
 
-    rest = s[prefix_end:]
+    # columns() marker required for glob expansion
+    cm = _find_columns(rest)
+    if cm is None:
+        return ExprColumn(raw)
 
+    cs, ce, inner = cm
+
+    # EXCEPT outside columns() is invalid glob syntax
     rest_tokens = tokenize(rest)
-    except_pos = next(
-        (i for i, t in enumerate(rest_tokens)
-         if t.kind == TokenKind.WORD and t.value.upper() == 'EXCEPT'),
-        -1,
-    )
+    if any(
+        t.kind == TokenKind.WORD and t.value.upper() == 'EXCEPT'
+        and (t.start < cs or t.start >= ce)
+        for t in rest_tokens
+    ):
+        return ExprColumn(raw)
 
-    except_patterns: list[str] = []
-    if except_pos >= 0:
-        tail = rest[rest_tokens[except_pos].end:].strip()
-        except_patterns = _parse_except_patterns(tail)
-        expr_str = rest[:rest_tokens[except_pos].start].rstrip()
-    else:
-        expr_str = rest.strip()
+    # Parse EXCEPT clause inside columns()
+    inner_expr, except_patterns = _parse_inner_except(inner)
 
-    glob_pattern, template = _extract_glob_and_template(expr_str)
+    glob, _ = _extract_glob_and_template(inner_expr)
+    template = rest[:cs] + '{col}' + rest[ce:]
     return GlobTemplateColumn(
-        glob=glob_pattern,
+        glob=glob,
         type_filter=type_filter,
         excepts=except_patterns,
         expr=template,
