@@ -227,11 +227,11 @@ def _extract_glob_and_template(expr: str) -> tuple[str, str]:
     return glob_pattern, template
 
 
-def _parse_except_patterns(s: str) -> list[str]:
+def _parse_except_patterns(s: str) -> tuple[str, ...]:
     raw = s.strip()
     if raw.startswith('(') and raw.endswith(')'):
         raw = raw[1:-1]
-    return [p.strip() for p in raw.split(',') if p.strip()]
+    return tuple(p.strip() for p in raw.split(',') if p.strip())
 
 
 def _find_matching_paren(tokens: list, start: int) -> int | None:
@@ -269,7 +269,7 @@ def _find_columns(expr: str) -> tuple[int, int, str] | None:
     return None
 
 
-def _parse_inner_except(inner: str) -> tuple[str, list[str]]:
+def _parse_inner_except(inner: str) -> tuple[str, tuple[str, ...]]:
     """
     Parse EXCEPT clause inside a COLUMNS() inner expression.
     Returns (inner_expr_without_except, list_of_except_patterns).
@@ -281,7 +281,7 @@ def _parse_inner_except(inner: str) -> tuple[str, list[str]]:
         -1,
     )
     if except_pos == -1:
-        return inner.strip(), []
+        return inner.strip(), ()
 
     after = inner_tokens[except_pos + 1:]
     except_arg_start = inner_tokens[except_pos].end

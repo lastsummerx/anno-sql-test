@@ -156,8 +156,8 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
             v = prepared.col_for(name, prepared.namespace)
             lv = F.expr(f"{self.LEFT_DF_ALIAS}.{v}")
             rv = F.expr(f"{self.RIGHT_DF_ALIAS}.{v}")
-            both_null = F.isnull(lv) & F.isnull(rv)
-            both_not_null_and_comp = F.isnotnull(lv) & F.isnotnull(rv) & comparator(lv, rv)
+            both_null = lv.isNull() & rv.isNull()
+            both_not_null_and_comp = lv.isNotNull() & rv.isNotNull() & comparator(lv, rv)
             cmps.append(both_null | both_not_null_and_comp)
         return cmps
 

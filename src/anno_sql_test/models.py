@@ -10,23 +10,23 @@ class FieldType(Enum):
     TEMPORAL = 'temporal'
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExprColumn:
     expr: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class GlobTemplateColumn:
     glob: str
     type_filter: FieldType | None = None
-    excepts: list[str] = field(default_factory=list)
+    excepts: tuple[str, ...] = ()
     expr: str = "{col}"
 
     def format(self, field: str) -> str:
         return self.expr.format(col=field)
 
 
-@dataclass
+@dataclass(frozen=True)
 class AggFunc:
     func: str
 

@@ -77,7 +77,7 @@ def test_except_inside_columns_with_parens():
     r = parse_column_spec('columns(today*_cnt except(today_col1_cnt, today_col2_cnt))')
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == 'today*_cnt'
-    assert r.excepts == ['today_col1_cnt', 'today_col2_cnt']
+    assert r.excepts == ('today_col1_cnt', 'today_col2_cnt')
     assert r.expr == '{col}'
 
 
@@ -85,7 +85,7 @@ def test_except_inside_columns_without_parens():
     r = parse_column_spec('columns(today*_cnt except today_col1_cnt, today_col2_cnt)')
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == 'today*_cnt'
-    assert r.excepts == ['today_col1_cnt', 'today_col2_cnt']
+    assert r.excepts == ('today_col1_cnt', 'today_col2_cnt')
     assert r.expr == '{col}'
 
 
@@ -93,7 +93,7 @@ def test_except_inside_columns_single_with_parens():
     r = parse_column_spec('columns(* except(col1))')
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == '*'
-    assert r.excepts == ['col1']
+    assert r.excepts == ('col1',)
     assert r.expr == '{col}'
 
 
@@ -101,7 +101,7 @@ def test_except_inside_columns_single_without_parens():
     r = parse_column_spec('columns(* except col1)')
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == '*'
-    assert r.excepts == ['col1']
+    assert r.excepts == ('col1',)
     assert r.expr == '{col}'
 
 
@@ -110,21 +110,21 @@ def test_except_inside_columns_with_type_filter():
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == 'today*_cnt'
     assert r.type_filter == FieldType.NUMERIC
-    assert r.excepts == ['today_col1_cnt', 'today_col2_cnt']
+    assert r.excepts == ('today_col1_cnt', 'today_col2_cnt')
     assert r.expr == '{col}'
 
 
 def test_except_inside_columns_lowercase():
     r = parse_column_spec('columns(today*_cnt except(today_col1_cnt, today_col2_cnt))')
     assert isinstance(r, GlobTemplateColumn)
-    assert r.excepts == ['today_col1_cnt', 'today_col2_cnt']
+    assert r.excepts == ('today_col1_cnt', 'today_col2_cnt')
 
 
 def test_except_inside_columns_wildcard_pattern():
     r = parse_column_spec('columns(* except(_*, adjustment))')
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == '*'
-    assert r.excepts == ['_*', 'adjustment']
+    assert r.excepts == ('_*', 'adjustment')
     assert r.expr == '{col}'
 
 
@@ -132,5 +132,5 @@ def test_except_inside_columns_no_except():
     r = parse_column_spec('columns(today*_cnt)')
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == 'today*_cnt'
-    assert r.excepts == []
+    assert r.excepts == ()
     assert r.expr == '{col}'

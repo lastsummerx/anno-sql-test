@@ -66,7 +66,7 @@ def _filter_by_glob(cols: list[str], pattern: str) -> list[str]:
     return [c for c in cols if re.match(f'^{regex}$', c)]
 
 
-def _filter_except(columns: list[str], patterns: list[str]) -> list[str]:
+def _filter_except(columns: list[str], patterns: tuple[str, ...]) -> list[str]:
     return [
         c for c in columns
         if not any(_filter_by_glob([c], p) for p in patterns)

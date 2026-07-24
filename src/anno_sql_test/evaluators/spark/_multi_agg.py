@@ -144,8 +144,8 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
                     left = F.col(prepared.col_for(i, c, prepared.namespace))
                     right = F.col(prepared.col_for(j, c, prepared.namespace))
                     name = self._comparison_name(i, j, c, prepared.namespace)
-                    col_ok = (F.isnull(left) & F.isnull(right)) | (
-                        F.isnotnull(left) & F.isnotnull(right) & comparator(left, right)
+                    col_ok = (left.isNull() & right.isNull()) | (
+                        left.isNotNull() & right.isNotNull() & comparator(left, right)
                     )
                     cmp_cols.append(col_ok.alias(name))
                     comparisons.append(CrossDFComparation(
