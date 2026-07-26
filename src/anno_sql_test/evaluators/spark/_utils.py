@@ -1,5 +1,5 @@
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -41,7 +41,7 @@ class NamedColumn:
     namespace: str = ""
 
 
-type ColumnComparator = Callable[[Column, Column], Column]
+type ColumnComparator = Callable[[str, str], Column]
 type ColumnTypeChecker = Callable[[str, DataType], str | None]
 
 
@@ -73,7 +73,7 @@ def _filter_except(columns: list[str], patterns: tuple[str, ...]) -> list[str]:
     ]
 
 
-def resolve_fields(values: list[ColumnSpec], dataframes: list[DataFrame]) -> list[str]:
+def resolve_fields(values: Sequence[ColumnSpec], dataframes: list[DataFrame]) -> list[str]:
     if not values:
         return []
 
@@ -95,7 +95,7 @@ def resolve_fields(values: list[ColumnSpec], dataframes: list[DataFrame]) -> lis
                 expanded = _filter_by_glob(cols, glob)
                 if exc:
                     expanded = _filter_except(expanded, exc)
-                result.extend(template.format(col=col) for col in expanded)
+                result.extend(template.format(col) for col in expanded)
 
     return result
 

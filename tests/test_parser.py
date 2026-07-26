@@ -6,16 +6,14 @@ import pytest
 
 from anno_sql_test.errors import ParseError
 from anno_sql_test.models import (
-    AggFunc,
     DualJoinAssertEqual,
-    DualJoinAssertNumericDeltaApprox,
-    DualJoinAssertNumericRatioApprox,
+    DualJoinAssertLambda,
+    DualJoinAssertNumericApprox,
     DualJoinAssertTemporalApprox,
-    DualRowsAssertDeltaApprox,
     DualRowsAssertEqual,
-    DualRowsAssertRatioApprox,
     ExprColumn,
     GlobTemplateColumn,
+    LambdaFunc,
     MultiAggAssertEqual,
     MultiAggAssertNumericDeltaApprox,
     MultiAggAssertNumericRatioApprox,
@@ -109,8 +107,8 @@ def test_parse_dual_agg(tmp_path: Path):
     assert len(case.assertions) == 1
     a = cast(MultiAggAssertEqual, case.assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
-    assert a.agg == AggFunc(func="count({col})")
-    assert a.fields == [GlobTemplateColumn(glob="*")]
+    assert a.agg == LambdaFunc(param_names=("col",), template="count({col})")
+    assert a.fields == (GlobTemplateColumn(glob="*"),)
     assert len(case.sql_statements) == 2
 
 
@@ -139,7 +137,7 @@ def test_parse_unique_with_multiple_columns(tmp_path: Path):
     case = suite.cases[0]
     a = cast(SingleAssertUnique, case.assertions[0])
     assert isinstance(a, SingleAssertUnique)
-    assert a.fields == [ExprColumn(expr="id"), ExprColumn(expr="name")]
+    assert a.fields == (ExprColumn(expr="id"), ExprColumn(expr="name"))
 
 
 def test_parse_equal_with_keys_and_values(tmp_path: Path):
@@ -149,8 +147,8 @@ def test_parse_equal_with_keys_and_values(tmp_path: Path):
     case = suite.cases[0]
     a = cast(DualJoinAssertEqual, case.assertions[0])
     assert isinstance(a, DualJoinAssertEqual)
-    assert a.keys == [ExprColumn(expr="id"), ExprColumn(expr="date")]
-    assert a.values == [ExprColumn(expr="amount"), ExprColumn(expr="status")]
+    assert a.keys == (ExprColumn(expr="id"), ExprColumn(expr="date"))
+    assert a.values == (ExprColumn(expr="amount"), ExprColumn(expr="status"))
     assert len(case.sql_statements) == 2
 
 
@@ -197,9 +195,9 @@ def test_parse_agg_numeric_ratio_approx(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertNumericRatioApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertNumericRatioApprox)
-    assert a.agg == AggFunc(func="sum({col})")
+    assert a.agg == LambdaFunc(param_names=("col",), template="sum({col})")
     assert a.ratio == pytest.approx(0.05)
-    assert a.fields == [ExprColumn(expr="amount")]
+    assert a.fields == (ExprColumn(expr="amount"),)
 
 
 def test_parse_aggregation_equal_multi_field(tmp_path: Path):
@@ -208,8 +206,8 @@ def test_parse_aggregation_equal_multi_field(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
-    assert a.agg == AggFunc(func="sum({col})")
-    assert a.fields == [ExprColumn(expr="a"), ExprColumn(expr="b")]
+    assert a.agg == LambdaFunc(param_names=("col",), template="sum({col})")
+    assert a.fields == (ExprColumn(expr="a"), ExprColumn(expr="b"))
 
 
 def test_parse_aggregation_equal_expression(tmp_path: Path):
@@ -218,8 +216,8 @@ def test_parse_aggregation_equal_expression(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
-    assert a.agg == AggFunc(func="sum({col})")
-    assert a.fields == [ExprColumn(expr="a + b")]
+    assert a.agg == LambdaFunc(param_names=("col",), template="sum({col})")
+    assert a.fields == (ExprColumn(expr="a + b"),)
 
 
 def test_parse_agg_numeric_ratio_approx_multi_field(tmp_path: Path):
@@ -228,20 +226,21 @@ def test_parse_agg_numeric_ratio_approx_multi_field(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertNumericRatioApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertNumericRatioApprox)
-    assert a.agg == AggFunc(func="sum({col})")
+    assert a.agg == LambdaFunc(param_names=("col",), template="sum({col})")
     assert a.ratio == pytest.approx(0.05)
-    assert a.fields == [ExprColumn(expr="a"), ExprColumn(expr="b")]
+    assert a.fields == (ExprColumn(expr="a"), ExprColumn(expr="b"))
 
 
-def test_parse_numeric_ratio_approx(tmp_path: Path):
+def test_parse_numeric_approx_ratio(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_join_numeric_ratio_approx 0.05 on id values total\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_numeric_approx val_ratio=0.05 on id values total\nselect 1;\nselect 2;")
     suite = parse_file(p)
-    a = cast(DualJoinAssertNumericRatioApprox, suite.cases[0].assertions[0])
-    assert isinstance(a, DualJoinAssertNumericRatioApprox)
-    assert a.ratio == pytest.approx(0.05)
-    assert a.keys == [ExprColumn(expr="id")]
-    assert a.values == [ExprColumn(expr="total")]
+    a = cast(DualJoinAssertNumericApprox, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertNumericApprox)
+    assert a.val_ratio == pytest.approx(0.05)
+    assert a.val_delta == 0.0
+    assert a.keys == (ExprColumn(expr="id"),)
+    assert a.values == (ExprColumn(expr="total"),)
 
 
 def test_parse_agg_equal_missing_args(tmp_path: Path):
@@ -280,11 +279,14 @@ def test_parse_missing_on_keyword(tmp_path: Path):
         parse_file(p)
 
 
-def test_parse_missing_values_keyword(tmp_path: Path):
+def test_parse_join_equal_no_values(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_join_equal on id name\nselect 1;\nselect 2;")
-    with pytest.raises(ParseError, match="Expected.*values"):
-        parse_file(p)
+    p.write_text("-- @TEST t\n-- @assert_join_equal on id\nselect 1;\nselect 2;")
+    suite = parse_file(p)
+    a = cast(DualJoinAssertEqual, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertEqual)
+    assert a.keys == (ExprColumn(expr="id"),)
+    assert a.values == ()
 
 
 def test_parse_empty_keys_or_values(tmp_path: Path):
@@ -300,50 +302,55 @@ def test_parse_equal_expression_values(tmp_path: Path):
     suite = parse_file(p)
     a = cast(DualJoinAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertEqual)
-    assert a.keys == [ExprColumn(expr="id")]
-    assert a.values == [ExprColumn(expr="a + b")]
+    assert a.keys == (ExprColumn(expr="id"),)
+    assert a.values == (ExprColumn(expr="a + b"),)
 
 
-def test_parse_numeric_ratio_approx_expression_values(tmp_path: Path):
+def test_parse_numeric_approx_expression_values(tmp_path: Path):
     p = tmp_path / "f.sql"
     p.write_text(
-        "-- @TEST t\n-- @assert_join_numeric_ratio_approx 0.05 on id values a + b, a - b\nselect 1;\nselect 2;",
+        "-- @TEST t\n-- @assert_join_numeric_approx val_ratio=0.05 on id values a + b, a - b\nselect 1;\nselect 2;",
     )
     suite = parse_file(p)
-    a = cast(DualJoinAssertNumericRatioApprox, suite.cases[0].assertions[0])
-    assert isinstance(a, DualJoinAssertNumericRatioApprox)
-    assert a.ratio == pytest.approx(0.05)
-    assert a.keys == [ExprColumn(expr="id")]
-    assert a.values == [ExprColumn(expr="a + b"), ExprColumn(expr="a - b")]
+    a = cast(DualJoinAssertNumericApprox, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertNumericApprox)
+    assert a.val_ratio == pytest.approx(0.05)
+    assert a.keys == (ExprColumn(expr="id"),)
+    assert a.values == (ExprColumn(expr="a + b"), ExprColumn(expr="a - b"))
 
 
-def test_parse_numeric_ratio_approx_missing_args(tmp_path: Path):
+def test_parse_numeric_approx_no_param(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_join_numeric_ratio_approx\nselect 1;\nselect 2;")
-    with pytest.raises(ParseError, match="Expected.*ratio"):
+    p.write_text("-- @TEST t\n-- @assert_join_numeric_approx on id values total\nselect 1;\nselect 2;")
+    suite = parse_file(p)
+    a = cast(DualJoinAssertNumericApprox, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertNumericApprox)
+    assert a.val_ratio == 0.0
+    assert a.val_delta == 0.0
+
+
+def test_parse_numeric_approx_invalid_ratio(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_join_numeric_approx val_ratio=bad on id values total\nselect 1;\nselect 2;")
+    with pytest.raises(ParseError, match="Invalid"):
         parse_file(p)
 
-    p2 = tmp_path / "f2.sql"
-    p2.write_text("-- @TEST t\n-- @assert_join_numeric_ratio_approx bad on id values total\nselect 1;\nselect 2;")
-    with pytest.raises(ParseError, match="Invalid ratio"):
-        parse_file(p2)
 
-
-def test_parse_numeric_delta_approx(tmp_path: Path):
+def test_parse_numeric_approx_delta(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_join_numeric_delta_approx 10.5 on id values total\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_numeric_approx val_delta=10.5 on id values total\nselect 1;\nselect 2;")
     suite = parse_file(p)
-    a = cast(DualJoinAssertNumericDeltaApprox, suite.cases[0].assertions[0])
-    assert isinstance(a, DualJoinAssertNumericDeltaApprox)
-    assert a.delta == pytest.approx(10.5)
-    assert a.keys == [ExprColumn(expr="id")]
-    assert a.values == [ExprColumn(expr="total")]
+    a = cast(DualJoinAssertNumericApprox, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertNumericApprox)
+    assert a.val_delta == pytest.approx(10.5)
+    assert a.keys == (ExprColumn(expr="id"),)
+    assert a.values == (ExprColumn(expr="total"),)
 
 
-def test_parse_numeric_delta_approx_missing_args(tmp_path: Path):
+def test_parse_numeric_approx_invalid_delta(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_join_numeric_delta_approx\nselect 1;\nselect 2;")
-    with pytest.raises(ParseError, match="Expected.*delta"):
+    p.write_text("-- @TEST t\n-- @assert_join_numeric_approx val_delta=bad on id values total\nselect 1;\nselect 2;")
+    with pytest.raises(ParseError, match="Invalid"):
         parse_file(p)
 
 
@@ -353,9 +360,9 @@ def test_parse_agg_numeric_delta_approx(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertNumericDeltaApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertNumericDeltaApprox)
-    assert a.agg == AggFunc(func="sum({col})")
+    assert a.agg == LambdaFunc(param_names=("col",), template="sum({col})")
     assert a.delta == pytest.approx(10.5)
-    assert a.fields == [ExprColumn(expr="amount")]
+    assert a.fields == (ExprColumn(expr="amount"),)
 
 
 def test_parse_agg_numeric_delta_approx_missing_args(tmp_path: Path):
@@ -367,18 +374,18 @@ def test_parse_agg_numeric_delta_approx_missing_args(tmp_path: Path):
 
 def test_parse_temporal_approx(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_join_temporal_approx P1DT12H on id values ts\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_temporal_approx duration=P1DT12H on id values ts\nselect 1;\nselect 2;")
     suite = parse_file(p)
     a = cast(DualJoinAssertTemporalApprox, suite.cases[0].assertions[0])
     assert isinstance(a, DualJoinAssertTemporalApprox)
     assert a.duration_seconds == pytest.approx(129600.0)
-    assert a.keys == [ExprColumn(expr="id")]
-    assert a.values == [ExprColumn(expr="ts")]
+    assert a.keys == (ExprColumn(expr="id"),)
+    assert a.values == (ExprColumn(expr="ts"),)
 
 
 def test_parse_temporal_approx_invalid_duration(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_join_temporal_approx bad on id values ts\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_temporal_approx duration=bad on id values ts\nselect 1;\nselect 2;")
     with pytest.raises(ParseError, match="Invalid ISO 8601 duration"):
         parse_file(p)
 
@@ -389,9 +396,9 @@ def test_parse_agg_temporal_approx(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertTemporalApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertTemporalApprox)
-    assert a.agg == AggFunc(func="min({col})")
+    assert a.agg == LambdaFunc(param_names=("col",), template="min({col})")
     assert a.duration_seconds == pytest.approx(129600.0)
-    assert a.fields == [ExprColumn(expr="ts")]
+    assert a.fields == (ExprColumn(expr="ts"),)
 
 
 def test_parse_agg_equal_lambda(tmp_path: Path):
@@ -400,8 +407,8 @@ def test_parse_agg_equal_lambda(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
-    assert a.agg == AggFunc(func="count(distinct {col})")
-    assert a.fields == [ExprColumn(expr="id")]
+    assert a.agg == LambdaFunc(param_names=("x",), template="count(distinct {x})")
+    assert a.fields == (ExprColumn(expr="id"),)
 
 
 def test_parse_agg_equal_lambda_multi_field(tmp_path: Path):
@@ -410,8 +417,8 @@ def test_parse_agg_equal_lambda_multi_field(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertEqual)
-    assert a.agg == AggFunc(func="count(distinct {col})")
-    assert a.fields == [ExprColumn(expr="id"), ExprColumn(expr="name")]
+    assert a.agg == LambdaFunc(param_names=("x",), template="count(distinct {x})")
+    assert a.fields == (ExprColumn(expr="id"), ExprColumn(expr="name"))
 
 
 def test_parse_agg_numeric_ratio_approx_lambda(tmp_path: Path):
@@ -422,9 +429,9 @@ def test_parse_agg_numeric_ratio_approx_lambda(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertNumericRatioApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertNumericRatioApprox)
-    assert a.agg == AggFunc(func="count(distinct {col})")
+    assert a.agg == LambdaFunc(param_names=("x",), template="count(distinct {x})")
     assert a.ratio == pytest.approx(0.05)
-    assert a.fields == [ExprColumn(expr="amount")]
+    assert a.fields == (ExprColumn(expr="amount"),)
 
 
 def test_parse_agg_numeric_delta_approx_lambda(tmp_path: Path):
@@ -435,9 +442,9 @@ def test_parse_agg_numeric_delta_approx_lambda(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertNumericDeltaApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertNumericDeltaApprox)
-    assert a.agg == AggFunc(func="count(distinct {col})")
+    assert a.agg == LambdaFunc(param_names=("x",), template="count(distinct {x})")
     assert a.delta == pytest.approx(10.5)
-    assert a.fields == [ExprColumn(expr="amount")]
+    assert a.fields == (ExprColumn(expr="amount"),)
 
 
 def test_parse_agg_temporal_approx_lambda(tmp_path: Path):
@@ -448,9 +455,9 @@ def test_parse_agg_temporal_approx_lambda(tmp_path: Path):
     suite = parse_file(p)
     a = cast(MultiAggAssertTemporalApprox, suite.cases[0].assertions[0])
     assert isinstance(a, MultiAggAssertTemporalApprox)
-    assert a.agg == AggFunc(func="max({col})")
+    assert a.agg == LambdaFunc(param_names=("x",), template="max({x})")
     assert a.duration_seconds == pytest.approx(129600.0)
-    assert a.fields == [ExprColumn(expr="ts")]
+    assert a.fields == (ExprColumn(expr="ts"),)
 
 
 def test_parse_agg_equal_lambda_missing_fields(tmp_path: Path):
@@ -507,7 +514,7 @@ def test_parse_rows_equal_default_fields(tmp_path: Path):
     suite = parse_file(p)
     a = cast(DualRowsAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, DualRowsAssertEqual)
-    assert a.fields == [GlobTemplateColumn(glob="*")]
+    assert a.fields == (GlobTemplateColumn(glob="*"),)
 
 
 def test_parse_rows_equal_with_fields(tmp_path: Path):
@@ -516,75 +523,108 @@ def test_parse_rows_equal_with_fields(tmp_path: Path):
     suite = parse_file(p)
     a = cast(DualRowsAssertEqual, suite.cases[0].assertions[0])
     assert isinstance(a, DualRowsAssertEqual)
-    assert a.fields == [ExprColumn(expr="a"), ExprColumn(expr="b")]
+    assert a.fields == (ExprColumn(expr="a"), ExprColumn(expr="b"))
 
 
-def test_parse_rows_delta_approx_default_fields(tmp_path: Path):
+def test_parse_join_lambda_basic(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_rows_delta_approx 0.5\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_lambda ((a, b) -> a >= b) on id values amount\nselect 1;\nselect 2;")
     suite = parse_file(p)
-    a = cast(DualRowsAssertDeltaApprox, suite.cases[0].assertions[0])
-    assert isinstance(a, DualRowsAssertDeltaApprox)
-    assert a.delta == pytest.approx(0.5)
-    assert a.fields == [GlobTemplateColumn(glob="*")]
+    a = cast(DualJoinAssertLambda, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertLambda)
+    assert a.comparator == LambdaFunc(param_names=("a", "b"), template="{a} >= {b}")
+    assert a.keys == (ExprColumn(expr="id"),)
+    assert a.values == (ExprColumn(expr="amount"),)
+    assert a.join_type == "full"
 
 
-def test_parse_rows_delta_approx_with_fields(tmp_path: Path):
+def test_parse_join_lambda_no_values(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_rows_delta_approx 10.5 a, b\nselect 1;\nselect 2;")
+    p.write_text("-- @TEST t\n-- @assert_join_lambda ((a, b) -> a = b) on id\nselect 1;\nselect 2;")
     suite = parse_file(p)
-    a = cast(DualRowsAssertDeltaApprox, suite.cases[0].assertions[0])
-    assert isinstance(a, DualRowsAssertDeltaApprox)
-    assert a.delta == pytest.approx(10.5)
-    assert a.fields == [ExprColumn(expr="a"), ExprColumn(expr="b")]
+    a = cast(DualJoinAssertLambda, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertLambda)
+    assert a.comparator == LambdaFunc(param_names=("a", "b"), template="{a} = {b}")
+    assert a.keys == (ExprColumn(expr="id"),)
+    assert a.values == ()
 
 
-def test_parse_rows_ratio_approx_default_fields(tmp_path: Path):
+def test_parse_join_lambda_with_join_type(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_rows_ratio_approx 0.05\nselect 1;\nselect 2;")
+    p.write_text(
+        "-- @TEST t\n-- @assert_join_lambda ((a, b) -> a >= b) left join on id values amount\nselect 1;\nselect 2;",
+    )
     suite = parse_file(p)
-    a = cast(DualRowsAssertRatioApprox, suite.cases[0].assertions[0])
-    assert isinstance(a, DualRowsAssertRatioApprox)
-    assert a.ratio == pytest.approx(0.05)
-    assert a.fields == [GlobTemplateColumn(glob="*")]
+    a = cast(DualJoinAssertLambda, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertLambda)
+    assert a.join_type == "left"
 
 
-def test_parse_rows_ratio_approx_with_fields(tmp_path: Path):
+def test_parse_join_lambda_with_row_delta(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_rows_ratio_approx 0.05 a, b\nselect 1;\nselect 2;")
+    p.write_text(
+        "-- @TEST t\n-- @assert_join_lambda row_delta=3 ((a, b) -> a >= b) on id values amount\nselect 1;\nselect 2;",
+    )
     suite = parse_file(p)
-    a = cast(DualRowsAssertRatioApprox, suite.cases[0].assertions[0])
-    assert isinstance(a, DualRowsAssertRatioApprox)
-    assert a.ratio == pytest.approx(0.05)
-    assert a.fields == [ExprColumn(expr="a"), ExprColumn(expr="b")]
+    a = cast(DualJoinAssertLambda, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertLambda)
+    assert a.row_delta == 3
 
 
-def test_parse_rows_delta_approx_missing_delta(tmp_path: Path):
+def test_parse_join_equal_with_join_type(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_rows_delta_approx\nselect 1;\nselect 2;")
-    with pytest.raises(ParseError, match="Expected.*delta"):
-        parse_file(p)
+    p.write_text("-- @TEST t\n-- @assert_join_equal inner join on id values name\nselect 1;\nselect 2;")
+    suite = parse_file(p)
+    a = cast(DualJoinAssertEqual, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertEqual)
+    assert a.join_type == "inner"
+    assert a.row_ratio == 0.0
+    assert a.row_delta == 0
 
 
-def test_parse_rows_ratio_approx_missing_ratio(tmp_path: Path):
+def test_parse_join_equal_with_row_ratio(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_rows_ratio_approx\nselect 1;\nselect 2;")
-    with pytest.raises(ParseError, match="Expected.*ratio"):
-        parse_file(p)
+    p.write_text("-- @TEST t\n-- @assert_join_equal row_ratio=0.1 on id values name\nselect 1;\nselect 2;")
+    suite = parse_file(p)
+    a = cast(DualJoinAssertEqual, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertEqual)
+    assert a.row_ratio == pytest.approx(0.1)
+    assert a.row_delta == 0
 
 
-def test_parse_rows_delta_approx_invalid_delta(tmp_path: Path):
+def test_parse_join_numeric_approx_row_delta(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_rows_delta_approx bad\nselect 1;\nselect 2;")
-    with pytest.raises(ParseError, match="Invalid delta"):
-        parse_file(p)
+    params = "val_ratio=0.01 row_delta=5"
+    p.write_text(
+        f"-- @TEST t\n-- @assert_join_numeric_approx {params} on id values amount\nselect 1;\nselect 2;",
+    )
+    suite = parse_file(p)
+    a = cast(DualJoinAssertNumericApprox, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertNumericApprox)
+    assert a.val_ratio == pytest.approx(0.01)
+    assert a.row_delta == 5
 
 
-def test_parse_rows_ratio_approx_invalid_ratio(tmp_path: Path):
+def test_parse_join_temporal_approx_row_ratio(tmp_path: Path):
     p = tmp_path / "f.sql"
-    p.write_text("-- @TEST t\n-- @assert_rows_ratio_approx bad\nselect 1;\nselect 2;")
-    with pytest.raises(ParseError, match="Invalid ratio"):
-        parse_file(p)
+    p.write_text(
+        "-- @TEST t\n-- @assert_join_temporal_approx duration=P1D row_ratio=0.05 on id values ts\nselect 1;\nselect 2;",
+    )
+    suite = parse_file(p)
+    a = cast(DualJoinAssertTemporalApprox, suite.cases[0].assertions[0])
+    assert isinstance(a, DualJoinAssertTemporalApprox)
+    assert a.duration_seconds == pytest.approx(86400.0)
+    assert a.row_ratio == pytest.approx(0.05)
+
+
+def test_parse_rows_equal_row_ratio(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_rows_equal row_ratio=0.1 a, b\nselect 1;\nselect 2;")
+    suite = parse_file(p)
+    a = cast(DualRowsAssertEqual, suite.cases[0].assertions[0])
+    assert isinstance(a, DualRowsAssertEqual)
+    assert a.row_ratio == pytest.approx(0.1)
+    assert a.fields == (ExprColumn(expr="a"), ExprColumn(expr="b"))
 
 
 def test_parse_dependency_not_found(tmp_path: Path):

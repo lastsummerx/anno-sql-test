@@ -1,4 +1,4 @@
-from anno_sql_test.models import ExprColumn, FieldType, GlobTemplateColumn
+from anno_sql_test.models import ExprColumn, FieldType, GlobTemplateColumn, LambdaFunc
 from anno_sql_test.parser._utils import parse_column_spec
 
 
@@ -9,19 +9,20 @@ def test_expr_column():
 
 def test_glob_star():
     r = parse_column_spec('columns(*)')
-    assert isinstance(r, GlobTemplateColumn) and r.glob == '*' and r.expr == '{col}'
+    assert isinstance(r, GlobTemplateColumn) and r.glob == '*'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col}')
 
 
 def test_numeric_type_filter():
     r = parse_column_spec('numeric:columns(*)')
     assert isinstance(r, GlobTemplateColumn) and r.glob == '*'
-    assert r.type_filter == FieldType.NUMERIC and r.expr == '{col}'
+    assert r.type_filter == FieldType.NUMERIC and r.expr == LambdaFunc(param_names=('col',), template='{col}')
 
 
 def test_star_with_template():
     r = parse_column_spec('columns(*) is not null')
     assert isinstance(r, GlobTemplateColumn) and r.glob == '*'
-    assert r.expr == '{col} is not null'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col} is not null')
 
 
 # except outside columns() is invalid syntax — falls back to ExprColumn
@@ -38,7 +39,7 @@ def test_except_outside_columns_with_template_is_expr():
 def test_nvl_with_star_in_quotes():
     r = parse_column_spec("nvl(columns(*), '@') != ''")
     assert isinstance(r, GlobTemplateColumn) and r.glob == '*'
-    assert r.expr == "nvl({col}, '@') != ''"
+    assert r.expr == LambdaFunc(param_names=('col',), template="nvl({col}, '@') != ''")
 
 
 def test_except_outside_columns_string_filter_is_expr():
@@ -53,7 +54,8 @@ def test_number_alias_for_numeric():
 
 def test_glob_suffix():
     r = parse_column_spec('columns(cnt_*)')
-    assert isinstance(r, GlobTemplateColumn) and r.glob == 'cnt_*' and r.expr == '{col}'
+    assert isinstance(r, GlobTemplateColumn) and r.glob == 'cnt_*'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col}')
 
 
 def test_literal_column():
@@ -63,12 +65,14 @@ def test_literal_column():
 
 def test_columns_wrapper_star():
     r = parse_column_spec('columns(*)')
-    assert isinstance(r, GlobTemplateColumn) and r.glob == '*' and r.expr == '{col}'
+    assert isinstance(r, GlobTemplateColumn) and r.glob == '*'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col}')
 
 
 def test_columns_wrapper_with_suffix():
     r = parse_column_spec('columns(*_cnt)')
-    assert isinstance(r, GlobTemplateColumn) and r.glob == '*_cnt' and r.expr == '{col}'
+    assert isinstance(r, GlobTemplateColumn) and r.glob == '*_cnt'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col}')
 
 
 # --- EXCEPT inside columns() ---
@@ -78,7 +82,7 @@ def test_except_inside_columns_with_parens():
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == 'today*_cnt'
     assert r.excepts == ('today_col1_cnt', 'today_col2_cnt')
-    assert r.expr == '{col}'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col}')
 
 
 def test_except_inside_columns_without_parens():
@@ -86,7 +90,7 @@ def test_except_inside_columns_without_parens():
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == 'today*_cnt'
     assert r.excepts == ('today_col1_cnt', 'today_col2_cnt')
-    assert r.expr == '{col}'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col}')
 
 
 def test_except_inside_columns_single_with_parens():
@@ -94,7 +98,7 @@ def test_except_inside_columns_single_with_parens():
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == '*'
     assert r.excepts == ('col1',)
-    assert r.expr == '{col}'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col}')
 
 
 def test_except_inside_columns_single_without_parens():
@@ -102,7 +106,7 @@ def test_except_inside_columns_single_without_parens():
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == '*'
     assert r.excepts == ('col1',)
-    assert r.expr == '{col}'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col}')
 
 
 def test_except_inside_columns_with_type_filter():
@@ -111,7 +115,7 @@ def test_except_inside_columns_with_type_filter():
     assert r.glob == 'today*_cnt'
     assert r.type_filter == FieldType.NUMERIC
     assert r.excepts == ('today_col1_cnt', 'today_col2_cnt')
-    assert r.expr == '{col}'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col}')
 
 
 def test_except_inside_columns_lowercase():
@@ -125,7 +129,7 @@ def test_except_inside_columns_wildcard_pattern():
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == '*'
     assert r.excepts == ('_*', 'adjustment')
-    assert r.expr == '{col}'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col}')
 
 
 def test_except_inside_columns_no_except():
@@ -133,4 +137,4 @@ def test_except_inside_columns_no_except():
     assert isinstance(r, GlobTemplateColumn)
     assert r.glob == 'today*_cnt'
     assert r.excepts == ()
-    assert r.expr == '{col}'
+    assert r.expr == LambdaFunc(param_names=('col',), template='{col}')

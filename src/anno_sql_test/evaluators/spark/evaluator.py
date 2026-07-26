@@ -11,13 +11,11 @@ from anno_sql_test.evaluators.spark._base import (
 )
 from anno_sql_test.evaluators.spark._dual_join import (
     DualJoinAssertEqualEvaluator,
-    DualJoinAssertNumericDeltaApproxEvaluator,
-    DualJoinAssertNumericRatioApproxEvaluator,
+    DualJoinAssertLambdaEvaluator,
+    DualJoinAssertNumericApproxEvaluator,
     DualJoinAssertTemporalApproxEvaluator,
     DualJoinFusedAssertionEvaluator,
-    DualRowsAssertDeltaApproxEvaluator,
     DualRowsAssertEqualEvaluator,
-    DualRowsAssertRatioApproxEvaluator,
 )
 from anno_sql_test.evaluators.spark._multi_agg import (
     MultiAggAssertEqualEvaluator,
@@ -39,12 +37,10 @@ from anno_sql_test.models import (
     Assertion,
     AssertionResult,
     DualJoinAssertEqual,
-    DualJoinAssertNumericDeltaApprox,
-    DualJoinAssertNumericRatioApprox,
+    DualJoinAssertLambda,
+    DualJoinAssertNumericApprox,
     DualJoinAssertTemporalApprox,
-    DualRowsAssertDeltaApprox,
     DualRowsAssertEqual,
-    DualRowsAssertRatioApprox,
     FusedAssertion,
     MultiAggAssertEqual,
     MultiAggAssertNumericDeltaApprox,
@@ -75,12 +71,10 @@ class SparkAssertionEvaluator(BaseSparkEvaluator[Assertion]):
             (MultiAggAssertNumericDeltaApprox, MultiAggAssertNumericDeltaApproxEvaluator()),
             (MultiAggAssertTemporalApprox, MultiAggAssertTemporalApproxEvaluator()),
             (DualJoinAssertEqual, DualJoinAssertEqualEvaluator(sample_count=sample_count)),
-            (DualJoinAssertNumericRatioApprox, DualJoinAssertNumericRatioApproxEvaluator(sample_count=sample_count)),
-            (DualJoinAssertNumericDeltaApprox, DualJoinAssertNumericDeltaApproxEvaluator(sample_count=sample_count)),
+            (DualJoinAssertNumericApprox, DualJoinAssertNumericApproxEvaluator(sample_count=sample_count)),
             (DualJoinAssertTemporalApprox, DualJoinAssertTemporalApproxEvaluator(sample_count=sample_count)),
+            (DualJoinAssertLambda, DualJoinAssertLambdaEvaluator(sample_count=sample_count)),
             (DualRowsAssertEqual, DualRowsAssertEqualEvaluator(sample_count=sample_count)),
-            (DualRowsAssertDeltaApprox, DualRowsAssertDeltaApproxEvaluator(sample_count=sample_count)),
-            (DualRowsAssertRatioApprox, DualRowsAssertRatioApproxEvaluator(sample_count=sample_count)),
         ]
         self._handlers: dict[type[Assertion], BaseSparkEvaluator[Assertion]] = {
             k: cast(BaseSparkEvaluator[Assertion], v)

@@ -1,4 +1,6 @@
 import logging
+from collections import defaultdict
+from typing import Any
 
 from anno_sql_test.models import (
     Assertion,
@@ -14,7 +16,7 @@ _logger = logging.getLogger(__name__)
 def group_as_fused(assertions: list[Assertion]) -> list[FusedAssertion[Assertion]]:
     single: list[SingleAssertAll] = []
     multi: list[MultiAggAssertion] = []
-    by_keys: dict[tuple[str, ...], list[DualJoinAssertion]] = {}
+    by_keys: defaultdict[Any, list[DualJoinAssertion]] = defaultdict(list)
     others: list[Assertion] = []
 
     for a in assertions:
@@ -23,8 +25,7 @@ def group_as_fused(assertions: list[Assertion]) -> list[FusedAssertion[Assertion
         elif isinstance(a, MultiAggAssertion):
             multi.append(a)
         elif isinstance(a, DualJoinAssertion):
-            key = tuple(sorted(a.keys))
-            by_keys.setdefault(key, []).append(a)
+            by_keys[a.grouping_key()].append(a)
         else:
             others.append(a)
 

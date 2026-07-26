@@ -1,13 +1,67 @@
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, ClassVar, Generic, Literal, TypeVar
 
 
 class FieldType(Enum):
     NUMERIC = 'numeric'
     STRING = 'string'
     TEMPORAL = 'temporal'
+
+
+@dataclass(frozen=True)
+class LambdaFunc:
+    param_names: tuple[str, ...]
+    template: str
+
+    NAME_REGEX: ClassVar[re.Pattern[str]] = re.compile(r'\w+')
+
+    def format(self, *param_values: str) -> str:
+        if len(param_values) != len(self.param_names):
+            raise ValueError(f"Expected {len(self.param_names)} values, got {len(param_values)}")
+        kwargs = dict(zip(self.param_names, param_values))
+        return self.template.format(**kwargs)
+
+    @classmethod
+    def escape(cls, expr: str) -> str:
+        return expr.replace('{', '{{').replace('}', '}}')  # Escape braces for str.format
+
+    @classmethod
+    def from_str(cls, expr: str) -> "LambdaFunc":
+        if '->' not in expr:
+            raise ValueError(f"Invalid lambda expression: {expr}")
+
+        left, body = expr.split('->', 1)
+        left = left.strip()
+        body = cls.escape(body.strip())
+
+        if left.startswith('(') and left.endswith(')'):
+            param_names = tuple(name.strip() for name in left[1:-1].split(','))
+        else:
+            param_names = (left,)
+        for name in param_names:
+            if not cls.NAME_REGEX.fullmatch(name):
+                raise ValueError(f"Invalid parameter name: {name}")
+            body = re.sub(rf'\b{name}\b', f'{{{name}}}', body)
+
+        return cls(param_names=param_names, template=body)
+
+    @classmethod
+    def from_segments(cls, segments: list[tuple[Literal['var', 'txt'], str]]) -> "LambdaFunc":
+        param_name_list = []
+        template_seg = []
+        for t, x in segments:
+            if t == 'var':
+                if not cls.NAME_REGEX.fullmatch(x):
+                    raise ValueError(f"Invalid parameter name: {x}")
+                param_name_list.append(x)
+                template_seg.append(f"{{{x}}}")
+            else:
+                template_seg.append(cls.escape(x))
+        template = ''.join(template_seg)
+        return LambdaFunc(param_names=tuple(param_name_list), template=template)
 
 
 @dataclass(frozen=True)
@@ -20,18 +74,7 @@ class GlobTemplateColumn:
     glob: str
     type_filter: FieldType | None = None
     excepts: tuple[str, ...] = ()
-    expr: str = "{col}"
-
-    def format(self, field: str) -> str:
-        return self.expr.format(col=field)
-
-
-@dataclass(frozen=True)
-class AggFunc:
-    func: str
-
-    def format(self, field: str) -> str:
-        return self.func.format(col=field)
+    expr: LambdaFunc = LambdaFunc.from_str('col -> col')
 
 
 type ColumnSpec = ExprColumn | GlobTemplateColumn
@@ -49,19 +92,27 @@ class SingleAssertion(Assertion):
 
 @dataclass
 class DualJoinAssertion(Assertion):
-    keys: list[ColumnSpec]
-    values: list[ColumnSpec]
+    keys: tuple[ColumnSpec, ...]
+    values: tuple[ColumnSpec, ...]
+    row_ratio: float = 0.0
+    row_delta: int = 0
+    join_type: str = "full"
+
+    def grouping_key(self):
+        return (frozenset(self.keys), self.join_type, self.row_delta, self.row_ratio)
 
 
 @dataclass
 class MultiAggAssertion(Assertion):
-    fields: list[ColumnSpec]
-    agg: AggFunc
+    fields: tuple[ColumnSpec, ...]
+    agg: LambdaFunc
 
 
 @dataclass
 class DualRowsAssertion(Assertion):
-    fields: list[ColumnSpec]
+    fields: tuple[ColumnSpec, ...]
+    row_ratio: float = 0.0
+    row_delta: int = 0
 
 
 @dataclass
@@ -96,7 +147,7 @@ class SingleAssertNotEmpty(SingleAssertion):
 
 @dataclass
 class SingleAssertUnique(Assertion):
-    fields: list[ColumnSpec]
+    fields: tuple[ColumnSpec, ...]
 
 
 @dataclass
@@ -125,33 +176,24 @@ class DualRowsAssertEqual(DualRowsAssertion):
 
 
 @dataclass
-class DualRowsAssertDeltaApprox(DualRowsAssertion):
-    delta: float
-
-
-@dataclass
-class DualRowsAssertRatioApprox(DualRowsAssertion):
-    ratio: float
-
-
-@dataclass
 class DualJoinAssertEqual(DualJoinAssertion):
     pass
 
 
 @dataclass
-class DualJoinAssertNumericRatioApprox(DualJoinAssertion):
-    ratio: float
-
-
-@dataclass
-class DualJoinAssertNumericDeltaApprox(DualJoinAssertion):
-    delta: float
+class DualJoinAssertNumericApprox(DualJoinAssertion):
+    val_ratio: float = 0.0
+    val_delta: float = 0.0
 
 
 @dataclass
 class DualJoinAssertTemporalApprox(DualJoinAssertion):
-    duration_seconds: float
+    duration_seconds: float = 0.0
+
+
+@dataclass
+class DualJoinAssertLambda(DualJoinAssertion):
+    comparator: LambdaFunc = LambdaFunc.from_str('(a, b) -> a = b')
 
 
 T_co = TypeVar('T_co', bound=Assertion, covariant=True)

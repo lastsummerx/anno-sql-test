@@ -16,7 +16,6 @@ from anno_sql_test.evaluators.spark._base import (
     DelegatingStepwiseSparkFusedEvaluator,
 )
 from anno_sql_test.evaluators.spark._utils import (
-    ColumnComparator,
     ColumnTypeChecker,
     NamedColumn,
     _batch_validate_types,
@@ -27,11 +26,11 @@ from anno_sql_test.evaluators.spark._utils import (
     resolve_fields,
 )
 from anno_sql_test.models import (
-    AggFunc,
     Assertion,
     AssertionResult,
     ColumnSpec,
     FusedAssertion,
+    LambdaFunc,
     MultiAggAssertEqual,
     MultiAggAssertion,
     MultiAggAssertNumericDeltaApprox,
@@ -86,7 +85,7 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
 
     @classmethod
     def prepare_values(
-        cls, dataframes: list[DataFrame], agg: AggFunc, values: list[ColumnSpec], namespace: str = "",
+        cls, dataframes: list[DataFrame], agg: LambdaFunc, values: list[ColumnSpec], namespace: str = "",
     ) -> list[NamedColumn]:
         fields = resolve_fields(values, dataframes)
         agg_fields = [agg.format(x) for x in fields]
@@ -127,7 +126,7 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
 
     def prepare(self, assertion: T, dataframes: list[DataFrame]) -> MultiAggContext:
         self.logger.debug("Preparing %s: agg=%s, fields=%s", type(assertion).__name__, assertion.agg, assertion.fields)
-        values = self.prepare_values(dataframes, assertion.agg, assertion.fields)
+        values = self.prepare_values(dataframes, assertion.agg, list(assertion.fields))
         return self.prepare_shared(dataframes, values)
 
     def build(self, assertion: T, prepared: MultiAggContext) -> MultiAggPlan:
@@ -141,11 +140,13 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
                 value_cols.append(F.col(prepared.col_for(i, c, prepared.namespace)))
             for j in range(i + 1, prepared.n):
                 for c in prepared.original_values:
-                    left = F.col(prepared.col_for(i, c, prepared.namespace))
-                    right = F.col(prepared.col_for(j, c, prepared.namespace))
+                    lv_str = prepared.col_for(i, c, prepared.namespace)
+                    rv_str = prepared.col_for(j, c, prepared.namespace)
+                    lv = F.col(lv_str)
+                    rv = F.col(rv_str)
                     name = self._comparison_name(i, j, c, prepared.namespace)
-                    col_ok = (left.isNull() & right.isNull()) | (
-                        left.isNotNull() & right.isNotNull() & comparator(left, right)
+                    col_ok = (lv.isNull() & rv.isNull()) | (
+                        lv.isNotNull() & rv.isNotNull() & F.expr(comparator.format(lv_str, rv_str))
                     )
                     cmp_cols.append(col_ok.alias(name))
                     comparisons.append(CrossDFComparation(
@@ -185,7 +186,7 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
         )]
 
     @abstractmethod
-    def get_comparator(self, assertion: T) -> ColumnComparator:
+    def get_comparator(self, assertion: T) -> LambdaFunc:
         ...
 
     def get_type_checker(self) -> ColumnTypeChecker | None:
@@ -193,16 +194,15 @@ class BaseMultiAggEvaluator[T: MultiAggAssertion](
 
 
 class MultiAggAssertEqualEvaluator(BaseMultiAggEvaluator[MultiAggAssertEqual]):
-    def get_comparator(self, assertion: MultiAggAssertEqual) -> ColumnComparator:
-        return lambda ac, bc: ac == bc
+    def get_comparator(self, assertion: MultiAggAssertEqual) -> LambdaFunc:
+        return LambdaFunc.from_str('(a, b) -> a = b')
 
 
 class MultiAggAssertNumericRatioApproxEvaluator(BaseMultiAggEvaluator[MultiAggAssertNumericRatioApprox]):
-    def get_comparator(self, assertion: MultiAggAssertNumericRatioApprox) -> ColumnComparator:
+    def get_comparator(self, assertion: MultiAggAssertNumericRatioApprox) -> LambdaFunc:
         ratio = assertion.ratio
-        return lambda ac, bc: (
-            F.abs(ac.cast("double") - bc.cast("double"))
-            <= ratio * F.greatest(F.abs(ac.cast("double")), F.abs(bc.cast("double")))
+        return LambdaFunc.from_str(
+            f'(ac, bc) -> abs(ac - bc) <= {ratio} * greatest(abs(ac), abs(bc))',
         )
 
     def get_type_checker(self) -> ColumnTypeChecker:
@@ -210,20 +210,18 @@ class MultiAggAssertNumericRatioApproxEvaluator(BaseMultiAggEvaluator[MultiAggAs
 
 
 class MultiAggAssertNumericDeltaApproxEvaluator(BaseMultiAggEvaluator[MultiAggAssertNumericDeltaApprox]):
-    def get_comparator(self, assertion: MultiAggAssertNumericDeltaApprox) -> ColumnComparator:
+    def get_comparator(self, assertion: MultiAggAssertNumericDeltaApprox) -> LambdaFunc:
         delta = assertion.delta
-        return lambda ac, bc: F.abs(ac.cast("double") - bc.cast("double")) <= F.lit(delta)
+        return LambdaFunc.from_str(f'(ac, bc) -> abs(ac - bc) <= {delta}')
 
     def get_type_checker(self) -> ColumnTypeChecker:
         return _check_numeric
 
 
 class MultiAggAssertTemporalApproxEvaluator(BaseMultiAggEvaluator[MultiAggAssertTemporalApprox]):
-    def get_comparator(self, assertion: MultiAggAssertTemporalApprox) -> ColumnComparator:
+    def get_comparator(self, assertion: MultiAggAssertTemporalApprox) -> LambdaFunc:
         ds = assertion.duration_seconds
-        return lambda ac, bc: (
-            F.abs(ac.cast("double") - bc.cast("double")) <= F.lit(ds)
-        )
+        return LambdaFunc.from_str(f'(ac, bc) -> abs(ac - bc) <= {ds}')
 
     def get_type_checker(self) -> ColumnTypeChecker:
         return _check_temporal
@@ -253,7 +251,7 @@ class MultiAggFusedAssertionEvaluator(
         all_values = []
         for i, asrt in enumerate(assertion.assertions):
             evaluator = self._assertion_evaluators[type(asrt)]
-            values = evaluator.prepare_values(dataframes, asrt.agg, asrt.fields, namespace=f"asrt{i}")
+            values = evaluator.prepare_values(dataframes, asrt.agg, list(asrt.fields), namespace=f"asrt{i}")
             all_values.append(values)
         prepared_all = BaseMultiAggEvaluator.prepare_shared(dataframes, list(chain.from_iterable(all_values)))
         ctxs = []

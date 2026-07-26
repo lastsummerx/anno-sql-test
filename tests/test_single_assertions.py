@@ -5,6 +5,7 @@ from anno_sql_test.models import (
     ExprColumn,
     FieldType,
     GlobTemplateColumn,
+    LambdaFunc,
     SingleAssertAll,
     SingleAssertAny,
     SingleAssertEmpty,
@@ -59,25 +60,25 @@ def test_assert_not_empty_fail():
 
 def test_assert_unique_single_column_pass():
     df = spark.createDataFrame([(1,), (2,), (3,)], ["a"])
-    result = evaluator.evaluate(SingleAssertUnique(fields=[ExprColumn(expr="a")]), [df])
+    result = evaluator.evaluate(SingleAssertUnique(fields=(ExprColumn(expr="a"),)), [df])
     assert result.passed is True
 
 
 def test_assert_unique_single_column_fail():
     df = spark.createDataFrame([(1,), (1,), (2,)], ["a"])
-    result = evaluator.evaluate(SingleAssertUnique(fields=[ExprColumn(expr="a")]), [df])
+    result = evaluator.evaluate(SingleAssertUnique(fields=(ExprColumn(expr="a"),)), [df])
     assert result.passed is False
 
 
 def test_assert_unique_composite_pass():
     df = spark.createDataFrame([(1, "x"), (1, "y"), (2, "x")], ["a", "b"])
-    result = evaluator.evaluate(SingleAssertUnique(fields=[ExprColumn(expr="a"), ExprColumn(expr="b")]), [df])
+    result = evaluator.evaluate(SingleAssertUnique(fields=(ExprColumn(expr="a"), ExprColumn(expr="b"))), [df])
     assert result.passed is True
 
 
 def test_assert_unique_composite_fail():
     df = spark.createDataFrame([(1, "x"), (1, "x"), (2, "y")], ["a", "b"])
-    result = evaluator.evaluate(SingleAssertUnique(fields=[ExprColumn(expr="a"), ExprColumn(expr="b")]), [df])
+    result = evaluator.evaluate(SingleAssertUnique(fields=(ExprColumn(expr="a"), ExprColumn(expr="b"))), [df])
     assert result.passed is False
 
 
@@ -132,7 +133,8 @@ def test_assert_none_all_rows_match_fail():
 def test_assert_all_star_is_not_null_pass():
     df = spark.createDataFrame([(1, "a"), (2, "b")], ["a", "b"])
     result = evaluator.evaluate(
-        SingleAssertAll(predicate=GlobTemplateColumn(glob="*", expr="{col} is not null")), [df],
+        SingleAssertAll(predicate=GlobTemplateColumn(
+            glob="*", expr=LambdaFunc(param_names=("col",), template="{col} is not null"))), [df],
     )
     assert result.passed is True
 
@@ -140,7 +142,8 @@ def test_assert_all_star_is_not_null_pass():
 def test_assert_all_star_is_not_null_fail():
     df = spark.createDataFrame([(1, "a"), (None, "b")], ["a", "b"])
     result = evaluator.evaluate(
-        SingleAssertAll(predicate=GlobTemplateColumn(glob="*", expr="{col} is not null")), [df],
+        SingleAssertAll(predicate=GlobTemplateColumn(
+            glob="*", expr=LambdaFunc(param_names=("col",), template="{col} is not null"))), [df],
     )
     assert result.passed is False
 
@@ -148,7 +151,8 @@ def test_assert_all_star_is_not_null_fail():
 def test_assert_all_star_expr_pass():
     df = spark.createDataFrame([("a", "x"), ("b", "y")], ["a", "b"])
     result = evaluator.evaluate(
-        SingleAssertAll(predicate=GlobTemplateColumn(glob="*", expr="nvl({col}, '@') != ''")), [df],
+        SingleAssertAll(predicate=GlobTemplateColumn(
+            glob="*", expr=LambdaFunc(param_names=("col",), template="nvl({col}, '@') != ''"))), [df],
     )
     assert result.passed is True
 
@@ -156,7 +160,8 @@ def test_assert_all_star_expr_pass():
 def test_assert_all_star_expr_fail():
     df = spark.createDataFrame([("a", "x"), ("", "y")], ["a", "b"])
     result = evaluator.evaluate(
-        SingleAssertAll(predicate=GlobTemplateColumn(glob="*", expr="nvl({col}, '@') != ''")), [df],
+        SingleAssertAll(predicate=GlobTemplateColumn(
+            glob="*", expr=LambdaFunc(param_names=("col",), template="nvl({col}, '@') != ''"))), [df],
     )
     assert result.passed is False
 
@@ -164,7 +169,8 @@ def test_assert_all_star_expr_fail():
 def test_assert_any_star_is_not_null_pass():
     df = spark.createDataFrame([(None, 1), (1, None)], schema="a: int, b: int")
     result = evaluator.evaluate(
-        SingleAssertAny(predicate=GlobTemplateColumn(glob="*", expr="{col} is not null")), [df],
+        SingleAssertAny(predicate=GlobTemplateColumn(
+            glob="*", expr=LambdaFunc(param_names=("col",), template="{col} is not null"))), [df],
     )
     assert result.passed is True
 
@@ -172,7 +178,8 @@ def test_assert_any_star_is_not_null_pass():
 def test_assert_any_star_is_not_null_fail():
     df = spark.createDataFrame([(None, None), (1, None)], schema="a: int, b: int")
     result = evaluator.evaluate(
-        SingleAssertAny(predicate=GlobTemplateColumn(glob="*", expr="{col} is not null")), [df],
+        SingleAssertAny(predicate=GlobTemplateColumn(
+            glob="*", expr=LambdaFunc(param_names=("col",), template="{col} is not null"))), [df],
     )
     assert result.passed is False
 
@@ -180,7 +187,8 @@ def test_assert_any_star_is_not_null_fail():
 def test_assert_none_star_is_null_pass():
     df = spark.createDataFrame([(1, "a"), (2, "b")], ["a", "b"])
     result = evaluator.evaluate(
-        SingleAssertNone(predicate=GlobTemplateColumn(glob="*", expr="{col} is null")), [df],
+        SingleAssertNone(predicate=GlobTemplateColumn(
+            glob="*", expr=LambdaFunc(param_names=("col",), template="{col} is null"))), [df],
     )
     assert result.passed is True
 
@@ -188,7 +196,8 @@ def test_assert_none_star_is_null_pass():
 def test_assert_none_star_is_null_fail():
     df = spark.createDataFrame([(1, "a"), (None, "b")], ["a", "b"])
     result = evaluator.evaluate(
-        SingleAssertNone(predicate=GlobTemplateColumn(glob="*", expr="{col} is null")), [df],
+        SingleAssertNone(predicate=GlobTemplateColumn(
+            glob="*", expr=LambdaFunc(param_names=("col",), template="{col} is null"))), [df],
     )
     assert result.passed is False
 
@@ -197,7 +206,9 @@ def test_assert_all_numeric_star_is_not_null_pass():
     df = spark.createDataFrame([(1, "a", 3.0), (2, "b", 4.0)], ["a", "b", "c"])
     result = evaluator.evaluate(
         SingleAssertAll(
-            predicate=GlobTemplateColumn(glob="*", type_filter=FieldType.NUMERIC, expr="{col} is not null")),
+            predicate=GlobTemplateColumn(
+                glob="*", type_filter=FieldType.NUMERIC,
+                expr=LambdaFunc(param_names=("col",), template="{col} is not null"))),
         [df],
     )
     assert result.passed is True
@@ -207,7 +218,9 @@ def test_assert_all_numeric_star_is_not_null_fail():
     df = spark.createDataFrame([(1, "a", None), (2, "b", 4.0)], ["a", "b", "c"])
     result = evaluator.evaluate(
         SingleAssertAll(
-            predicate=GlobTemplateColumn(glob="*", type_filter=FieldType.NUMERIC, expr="{col} is not null")),
+            predicate=GlobTemplateColumn(
+                glob="*", type_filter=FieldType.NUMERIC,
+                expr=LambdaFunc(param_names=("col",), template="{col} is not null"))),
         [df],
     )
     assert result.passed is False
@@ -216,7 +229,8 @@ def test_assert_all_numeric_star_is_not_null_fail():
 def test_assert_all_glob_suffix_pass():
     df = spark.createDataFrame([(1, "x"), (2, "y")], ["a_cnt", "b_other"])
     result = evaluator.evaluate(
-        SingleAssertAll(predicate=GlobTemplateColumn(glob="*_cnt", expr="{col} is not null")), [df],
+        SingleAssertAll(predicate=GlobTemplateColumn(
+            glob="*_cnt", expr=LambdaFunc(param_names=("col",), template="{col} is not null"))), [df],
     )
     assert result.passed is True
 
@@ -224,7 +238,8 @@ def test_assert_all_glob_suffix_pass():
 def test_assert_all_glob_suffix_fail():
     df = spark.createDataFrame([(None, "x"), (2, "y")], ["a_cnt", "b_other"])
     result = evaluator.evaluate(
-        SingleAssertAll(predicate=GlobTemplateColumn(glob="*_cnt", expr="{col} is not null")), [df],
+        SingleAssertAll(predicate=GlobTemplateColumn(
+            glob="*_cnt", expr=LambdaFunc(param_names=("col",), template="{col} is not null"))), [df],
     )
     assert result.passed is False
 
@@ -232,7 +247,9 @@ def test_assert_all_glob_suffix_fail():
 def test_assert_all_type_glob_combined():
     df = spark.createDataFrame([(1, "x", 3.0), (2, "y", None)], ["a_cnt", "b_str", "c_cnt"])
     result = evaluator.evaluate(
-        SingleAssertAll(GlobTemplateColumn(glob="*_cnt", type_filter=FieldType.NUMERIC, expr="{col} is not null")),
+        SingleAssertAll(GlobTemplateColumn(
+            glob="*_cnt", type_filter=FieldType.NUMERIC,
+            expr=LambdaFunc(param_names=("col",), template="{col} is not null"))),
         [df],
     )
     assert result.passed is False
@@ -241,7 +258,8 @@ def test_assert_all_type_glob_combined():
 def test_assert_all_glob_prefix_pass():
     df = spark.createDataFrame([(1, "x"), (2, "y")], ["cnt_a", "other_b"])
     result = evaluator.evaluate(
-        SingleAssertAll(predicate=GlobTemplateColumn(glob="cnt_*", expr="{col} is not null")), [df],
+        SingleAssertAll(predicate=GlobTemplateColumn(
+            glob="cnt_*", expr=LambdaFunc(param_names=("col",), template="{col} is not null"))), [df],
     )
     assert result.passed is True
 
@@ -249,7 +267,8 @@ def test_assert_all_glob_prefix_pass():
 def test_assert_all_star_quoted_literal():
     df = spark.createDataFrame([("a", "x"), ("b", "y")], ["a", "b"])
     result = evaluator.evaluate(
-        SingleAssertAll(predicate=GlobTemplateColumn(glob="*", expr="nvl({col}, '*:') != ''")), [df],
+        SingleAssertAll(predicate=GlobTemplateColumn(
+            glob="*", expr=LambdaFunc(param_names=("col",), template="nvl({col}, '*:') != ''"))), [df],
     )
     assert result.passed is True
 
@@ -258,7 +277,9 @@ def test_assert_all_string_star_pass():
     df = spark.createDataFrame([(1, "a", "x"), (2, "b", "y")], ["a", "b", "c"])
     result = evaluator.evaluate(
         SingleAssertAll(
-            GlobTemplateColumn(glob="*", type_filter=FieldType.STRING, expr="{col} is not null"),
+            GlobTemplateColumn(
+                glob="*", type_filter=FieldType.STRING,
+                expr=LambdaFunc(param_names=("col",), template="{col} is not null")),
         ),
         [df],
     )
@@ -267,14 +288,14 @@ def test_assert_all_string_star_pass():
 
 def test_assert_unique_with_count_column():
     df = spark.createDataFrame([("a", 1), ("b", 2), ("c", 1)], ["count", "x"])
-    result = evaluator.evaluate(SingleAssertUnique(fields=[ExprColumn(expr="count")]), [df])
+    result = evaluator.evaluate(SingleAssertUnique(fields=(ExprColumn(expr="count"),)), [df])
     assert result.passed is True
 
-    result = evaluator.evaluate(SingleAssertUnique(fields=[ExprColumn(expr="count"), ExprColumn(expr="x")]), [df])
+    result = evaluator.evaluate(SingleAssertUnique(fields=(ExprColumn(expr="count"), ExprColumn(expr="x"))), [df])
     assert result.passed is True
 
     df_dup = spark.createDataFrame([("a", 1), ("a", 1), ("b", 2)], ["count", "x"])
-    result = evaluator.evaluate(SingleAssertUnique(fields=[ExprColumn(expr="count"), ExprColumn(expr="x")]), [df_dup])
+    result = evaluator.evaluate(SingleAssertUnique(fields=(ExprColumn(expr="count"), ExprColumn(expr="x"))), [df_dup])
     assert result.passed is False
 
 
@@ -340,7 +361,7 @@ def test_assert_none_failure_sample():
 def test_assert_unique_failure_sample():
     sample_eval = SparkAssertionEvaluator(sample_count=5)
     df = spark.createDataFrame([(1,), (1,), (2,), (3,), (3,)], ["a"])
-    result = sample_eval.evaluate(SingleAssertUnique(fields=[ExprColumn(expr="a")]), [df])
+    result = sample_eval.evaluate(SingleAssertUnique(fields=(ExprColumn(expr="a"),)), [df])
     assert result.passed is False
     assert result.failure_sample is not None
     vals = {row["a"] for row in result.failure_sample}

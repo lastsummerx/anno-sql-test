@@ -3,9 +3,9 @@ from pathlib import Path
 from pyspark.sql import SparkSession
 
 from anno_sql_test.models import (
-    AggFunc,
     ExprColumn,
     GlobTemplateColumn,
+    LambdaFunc,
     MultiAggAssertEqual,
     SingleAssertAll,
     SingleAssertNotEmpty,
@@ -51,7 +51,9 @@ def test_run_dual_agg():
     suite = SqlTestSuite(path=Path("/fake/test.sql"))
     suite.blocks.append(SqlTestCase(
         name="test_agg",
-        assertions=[MultiAggAssertEqual(agg=AggFunc("count({col})"), fields=[GlobTemplateColumn("*")])],
+        assertions=[MultiAggAssertEqual(
+            agg=LambdaFunc(param_names=("col",), template="count({col})"),
+            fields=(GlobTemplateColumn(glob="*"),))],
         sql_statements=["SELECT 1 AS a", "SELECT 2 AS a"],
     ))
     result = runner.run(suite)

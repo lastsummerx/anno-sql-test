@@ -3,17 +3,14 @@ from pyspark.sql import functions as F
 
 from anno_sql_test.evaluators.spark import SparkAssertionEvaluator
 from anno_sql_test.models import (
-    AggFunc,
     DualJoinAssertEqual,
-    DualJoinAssertNumericDeltaApprox,
-    DualJoinAssertNumericRatioApprox,
+    DualJoinAssertNumericApprox,
     DualJoinAssertTemporalApprox,
-    DualRowsAssertDeltaApprox,
     DualRowsAssertEqual,
-    DualRowsAssertRatioApprox,
     ExprColumn,
     FieldType,
     GlobTemplateColumn,
+    LambdaFunc,
     MultiAggAssertEqual,
     MultiAggAssertNumericDeltaApprox,
     MultiAggAssertNumericRatioApprox,
@@ -31,7 +28,9 @@ def test_agg_equal_count_all_pass():
     df1 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
     df2 = spark.createDataFrame([(3, "c"), (4, "d")], ["id", "name"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="count({col})"), fields=[GlobTemplateColumn(glob="*")]),
+        MultiAggAssertEqual(
+            agg=LambdaFunc(param_names=("col",), template="count({col})"), fields=(GlobTemplateColumn(glob="*"),),
+        ),
         [df1, df2],
     )
     assert result.passed is True
@@ -41,7 +40,9 @@ def test_agg_equal_count_all_fail():
     df1 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
     df2 = spark.createDataFrame([(3,)], ["id"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="count({col})"), fields=[GlobTemplateColumn(glob="*")]),
+        MultiAggAssertEqual(
+            agg=LambdaFunc(param_names=("col",), template="count({col})"), fields=(GlobTemplateColumn(glob="*"),),
+        ),
         [df1, df2],
     )
     assert result.passed is False
@@ -52,7 +53,8 @@ def test_agg_equal_numeric_star_pass():
     df2 = spark.createDataFrame([(10, "c", 1), (20, "d", 2)], ["val", "name", "id"])
     result = evaluator.evaluate(
         MultiAggAssertEqual(
-            agg=AggFunc(func="sum({col})"), fields=[GlobTemplateColumn(glob="*", type_filter=FieldType.NUMERIC)],
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"),
+            fields=(GlobTemplateColumn(glob="*", type_filter=FieldType.NUMERIC),),
         ),
         [df1, df2],
     )
@@ -64,7 +66,8 @@ def test_agg_equal_numeric_star_fail():
     df2 = spark.createDataFrame([(3, "c", 5), (4, "d", 25)], ["id", "name", "val"])
     result = evaluator.evaluate(
         MultiAggAssertEqual(
-            agg=AggFunc(func="sum({col})"), fields=[GlobTemplateColumn(glob="*", type_filter=FieldType.NUMERIC)],
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"),
+            fields=(GlobTemplateColumn(glob="*", type_filter=FieldType.NUMERIC),),
         ),
         [df1, df2],
     )
@@ -75,7 +78,9 @@ def test_agg_equal_glob_suffix_pass():
     df1 = spark.createDataFrame([(10, 1), (20, 2)], ["val_cnt", "id"])
     df2 = spark.createDataFrame([(10, 1), (20, 2)], ["val_cnt", "id"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="sum({col})"), fields=[GlobTemplateColumn(glob="*_cnt")]),
+        MultiAggAssertEqual(
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"), fields=(GlobTemplateColumn(glob="*_cnt"),),
+        ),
         [df1, df2],
     )
     assert result.passed is True
@@ -86,8 +91,8 @@ def test_agg_equal_type_glob_combined_pass():
     df2 = spark.createDataFrame([(1, "c", 10), (2, "d", 20)], ["id", "name", "val_cnt"])
     result = evaluator.evaluate(
         MultiAggAssertEqual(
-            agg=AggFunc(func="sum({col})"),
-            fields=[GlobTemplateColumn(glob="*_cnt", type_filter=FieldType.NUMERIC)],
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"),
+            fields=(GlobTemplateColumn(glob="*_cnt", type_filter=FieldType.NUMERIC),),
         ),
         [df1, df2],
     )
@@ -98,7 +103,9 @@ def test_agg_equal_sum_pass():
     df1 = spark.createDataFrame([(100,), (200,)], ["amt"])
     df2 = spark.createDataFrame([(150,), (150,)], ["amt"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="amt")]),
+        MultiAggAssertEqual(
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="amt"),),
+        ),
         [df1, df2],
     )
     assert result.passed is True
@@ -108,7 +115,9 @@ def test_agg_equal_sum_fail():
     df1 = spark.createDataFrame([(100,), (200,)], ["amt"])
     df2 = spark.createDataFrame([(100,), (100,)], ["amt"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="amt")]),
+        MultiAggAssertEqual(
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="amt"),),
+        ),
         [df1, df2],
     )
     assert result.passed is False
@@ -118,7 +127,10 @@ def test_agg_numeric_ratio_approx_pass():
     df1 = spark.createDataFrame([(100.0,)], ["v"])
     df2 = spark.createDataFrame([(100.000001,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericRatioApprox(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="v")], ratio=0.01),
+        MultiAggAssertNumericRatioApprox(
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"),
+            fields=(ExprColumn(expr="v"),), ratio=0.01,
+        ),
         [df1, df2],
     )
     assert result.passed is True
@@ -128,7 +140,10 @@ def test_agg_numeric_ratio_approx_fail():
     df1 = spark.createDataFrame([(100.0,)], ["v"])
     df2 = spark.createDataFrame([(200.0,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericRatioApprox(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="v")], ratio=0.01),
+        MultiAggAssertNumericRatioApprox(
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"),
+            fields=(ExprColumn(expr="v"),), ratio=0.01,
+        ),
         [df1, df2],
     )
     assert result.passed is False
@@ -139,7 +154,9 @@ def test_agg_equal_three_dfs():
     df2 = spark.createDataFrame([(1,)], ["a"])
     df3 = spark.createDataFrame([(1,)], ["a"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="count({col})"), fields=[GlobTemplateColumn(glob="*")]),
+        MultiAggAssertEqual(agg=LambdaFunc(
+            param_names=("col",), template="count({col})"), fields=(GlobTemplateColumn(glob="*"),
+        )),
         [df1, df2, df3],
     )
     assert result.passed is True
@@ -150,7 +167,9 @@ def test_agg_equal_three_dfs_one_diff():
     df2 = spark.createDataFrame([(3, 50), (4, 250)], ["id", "amt"])
     df3 = spark.createDataFrame([(5, 500)], ["id", "amt"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="amt")]),
+        MultiAggAssertEqual(agg=LambdaFunc(
+            param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="amt"),
+        )),
         [df1, df2, df3],
     )
     assert result.passed is False
@@ -162,7 +181,9 @@ def test_agg_equal_three_dfs_all_diff():
     df2 = spark.createDataFrame([(200,)], ["amt"])
     df3 = spark.createDataFrame([(300,)], ["amt"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="amt")]),
+        MultiAggAssertEqual(agg=LambdaFunc(
+            param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="amt"),
+        )),
         [df1, df2, df3],
     )
     assert result.passed is False
@@ -177,7 +198,9 @@ def test_agg_equal_four_dfs_mixed():
     df3 = spark.createDataFrame([(300,)], ["amt"])
     df4 = spark.createDataFrame([(400,)], ["amt"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="amt")]),
+        MultiAggAssertEqual(agg=LambdaFunc(
+            param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="amt"),
+        )),
         [df1, df2, df3, df4],
     )
     assert result.passed is False
@@ -190,7 +213,10 @@ def test_agg_ratio_approx_three_dfs_fail():
     df2 = spark.createDataFrame([(101.0,)], ["v"])
     df3 = spark.createDataFrame([(200.0,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericRatioApprox(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="v")], ratio=0.01),
+        MultiAggAssertNumericRatioApprox(
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"),
+            fields=(ExprColumn(expr="v"),), ratio=0.01,
+        ),
         [df1, df2, df3],
     )
     assert result.passed is False
@@ -201,7 +227,10 @@ def test_agg_delta_approx_three_dfs_fail():
     df2 = spark.createDataFrame([(105.0,)], ["v"])
     df3 = spark.createDataFrame([(150.0,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericDeltaApprox(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="v")], delta=10.0),
+        MultiAggAssertNumericDeltaApprox(
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"),
+            fields=(ExprColumn(expr="v"),), delta=10.0,
+        ),
         [df1, df2, df3],
     )
     assert result.passed is False
@@ -211,7 +240,7 @@ def test_equal_by_key_pass():
     left = spark.createDataFrame([(1, "a", 100), (2, "b", 200)], ["id", "name", "amt"])
     right = spark.createDataFrame([(1, "a", 100), (2, "b", 200)], ["id", "name", "amt"])
     result = evaluator.evaluate(
-        DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="name"), ExprColumn(expr="amt")]),
+        DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="name"), ExprColumn(expr="amt"))),
         [left, right],
     )
     assert result.passed is True
@@ -221,7 +250,7 @@ def test_equal_by_key_fail():
     left = spark.createDataFrame([(1, "a", 100)], ["id", "name", "amt"])
     right = spark.createDataFrame([(1, "a", 999)], ["id", "name", "amt"])
     result = evaluator.evaluate(
-        DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="amt")]),
+        DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="amt"),)),
         [left, right],
     )
     assert result.passed is False
@@ -231,7 +260,7 @@ def test_equal_by_key_extra_left_row():
     left = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
     right = spark.createDataFrame([(1, "a")], ["id", "name"])
     result = evaluator.evaluate(
-        DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="name")]),
+        DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="name"),)),
         [left, right],
     )
     assert result.passed is False
@@ -241,7 +270,7 @@ def test_numeric_ratio_approx_by_key_pass():
     left = spark.createDataFrame([(1, 100.0)], ["id", "v"])
     right = spark.createDataFrame([(1, 100.000001)], ["id", "v"])
     result = evaluator.evaluate(
-        DualJoinAssertNumericRatioApprox(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="v")], ratio=0.01),
+        DualJoinAssertNumericApprox(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="v"),), val_ratio=0.01),
         [left, right],
     )
     assert result.passed is True
@@ -251,7 +280,9 @@ def test_agg_equal_sum_multi_field_pass():
     df1 = spark.createDataFrame([(100, 10), (200, 20)], ["a", "b"])
     df2 = spark.createDataFrame([(150, 15), (150, 15)], ["a", "b"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="a"), ExprColumn(expr="b")]),
+        MultiAggAssertEqual(agg=LambdaFunc(
+            param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="a"), ExprColumn(expr="b"),
+        )),
         [df1, df2],
     )
     assert result.passed is True
@@ -261,7 +292,9 @@ def test_agg_equal_sum_multi_field_fail():
     df1 = spark.createDataFrame([(100, 10), (200, 20)], ["a", "b"])
     df2 = spark.createDataFrame([(100, 15), (100, 15)], ["a", "b"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="a"), ExprColumn(expr="b")]),
+        MultiAggAssertEqual(agg=LambdaFunc(
+            param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="a"), ExprColumn(expr="b"),
+        )),
         [df1, df2],
     )
     assert result.passed is False
@@ -271,7 +304,9 @@ def test_agg_equal_sum_expression_pass():
     df1 = spark.createDataFrame([(100, 10), (200, 20)], ["a", "b"])
     df2 = spark.createDataFrame([(50, 5), (250, 25)], ["a", "b"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="a + b")]),
+        MultiAggAssertEqual(agg=LambdaFunc(
+            param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="a + b"),
+        )),
         [df1, df2],
     )
     assert result.passed is True
@@ -281,7 +316,9 @@ def test_agg_equal_sum_expression_fail():
     df1 = spark.createDataFrame([(100, 10), (200, 20)], ["a", "b"])
     df2 = spark.createDataFrame([(50, 5), (250, 20)], ["a", "b"])
     result = evaluator.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="a + b")]),
+        MultiAggAssertEqual(agg=LambdaFunc(
+            param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="a + b"),
+        )),
         [df1, df2],
     )
     assert result.passed is False
@@ -291,7 +328,7 @@ def test_equal_by_key_expression_values_pass():
     left = spark.createDataFrame([(1, 100, 10), (2, 200, 20)], ["id", "a", "b"])
     right = spark.createDataFrame([(1, 50, 60), (2, 100, 120)], ["id", "a", "b"])
     result = evaluator.evaluate(
-        DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="a + b")]),
+        DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="a + b"),)),
         [left, right],
     )
     assert result.passed is True
@@ -301,7 +338,7 @@ def test_equal_by_key_expression_values_fail():
     left = spark.createDataFrame([(1, 100, 10), (2, 200, 20)], ["id", "a", "b"])
     right = spark.createDataFrame([(1, 50, 60), (2, 100, 5)], ["id", "a", "b"])
     result = evaluator.evaluate(
-        DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="a + b")]),
+        DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="a + b"),)),
         [left, right],
     )
     assert result.passed is False
@@ -309,7 +346,7 @@ def test_equal_by_key_expression_values_fail():
 
 def test_assert_join_equal_requires_two_dfs():
     result = evaluator.evaluate(
-        DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="name")]),
+        DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="name"),)),
         [
             spark.createDataFrame([(1,)], ["id"]),
             spark.createDataFrame([(1,)], ["id"]),
@@ -324,7 +361,7 @@ def test_numeric_delta_approx_pass():
     left = spark.createDataFrame([(1, 100.0)], ["id", "v"])
     right = spark.createDataFrame([(1, 105.0)], ["id", "v"])
     result = evaluator.evaluate(
-        DualJoinAssertNumericDeltaApprox(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="v")], delta=10.0),
+        DualJoinAssertNumericApprox(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="v"),), val_delta=10.0),
         [left, right],
     )
     assert result.passed is True
@@ -334,7 +371,7 @@ def test_numeric_delta_approx_fail():
     left = spark.createDataFrame([(1, 100.0)], ["id", "v"])
     right = spark.createDataFrame([(1, 120.0)], ["id", "v"])
     result = evaluator.evaluate(
-        DualJoinAssertNumericDeltaApprox(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="v")], delta=10.0),
+        DualJoinAssertNumericApprox(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="v"),), val_delta=10.0),
         [left, right],
     )
     assert result.passed is False
@@ -344,7 +381,7 @@ def test_numeric_delta_approx_non_numeric_fails():
     left = spark.createDataFrame([(1, "foo")], ["id", "v"])
     right = spark.createDataFrame([(1, "bar")], ["id", "v"])
     result = evaluator.evaluate(
-        DualJoinAssertNumericDeltaApprox(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="v")], delta=10.0),
+        DualJoinAssertNumericApprox(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="v"),), val_delta=10.0),
         [left, right],
     )
     assert result.passed is False
@@ -355,7 +392,9 @@ def test_agg_numeric_delta_approx_pass():
     df1 = spark.createDataFrame([(100.0,)], ["v"])
     df2 = spark.createDataFrame([(105.0,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericDeltaApprox(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="v")], delta=10.0),
+        MultiAggAssertNumericDeltaApprox(
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="v"),), delta=10.0,
+        ),
         [df1, df2],
     )
     assert result.passed is True
@@ -365,7 +404,9 @@ def test_agg_numeric_delta_approx_fail():
     df1 = spark.createDataFrame([(100.0,)], ["v"])
     df2 = spark.createDataFrame([(120.0,)], ["v"])
     result = evaluator.evaluate(
-        MultiAggAssertNumericDeltaApprox(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="v")], delta=10.0),
+        MultiAggAssertNumericDeltaApprox(
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="v"),), delta=10.0,
+        ),
         [df1, df2],
     )
     assert result.passed is False
@@ -382,7 +423,7 @@ def test_temporal_approx_pass():
     right = right.withColumn("ts", F.col("ts").cast("timestamp"))
     result = evaluator.evaluate(
         DualJoinAssertTemporalApprox(
-            keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="ts")], duration_seconds=60.0,
+            keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="ts"),), duration_seconds=60.0,
         ),
         [left, right],
     )
@@ -400,7 +441,7 @@ def test_temporal_approx_fail():
     right = right.withColumn("ts", F.col("ts").cast("timestamp"))
     result = evaluator.evaluate(
         DualJoinAssertTemporalApprox(
-            keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="ts")], duration_seconds=60.0,
+            keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="ts"),), duration_seconds=60.0,
         ),
         [left, right],
     )
@@ -412,7 +453,7 @@ def test_temporal_approx_non_temporal_fails():
     right = spark.createDataFrame([(1, 200)], ["id", "v"])
     result = evaluator.evaluate(
         DualJoinAssertTemporalApprox(
-            keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="v")], duration_seconds=60.0,
+            keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="v"),), duration_seconds=60.0,
         ),
         [left, right],
     )
@@ -424,7 +465,7 @@ def test_rows_equal_all_pass():
     df1 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
     df2 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
     result = evaluator.evaluate(
-        DualRowsAssertEqual(fields=[GlobTemplateColumn(glob="*")]),
+        DualRowsAssertEqual(fields=(GlobTemplateColumn(glob="*"),)),
         [df1, df2],
     )
     assert result.passed is True
@@ -434,7 +475,7 @@ def test_rows_equal_all_fail():
     df1 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
     df2 = spark.createDataFrame([(1, "a"), (1, "a"), (2, "b")], ["id", "name"])
     result = evaluator.evaluate(
-        DualRowsAssertEqual(fields=[GlobTemplateColumn(glob="*")]),
+        DualRowsAssertEqual(fields=(GlobTemplateColumn(glob="*"),)),
         [df1, df2],
     )
     assert result.passed is False
@@ -444,7 +485,7 @@ def test_rows_equal_specific_fields_pass():
     df1 = spark.createDataFrame([(1, "a", 100), (2, "b", 200)], ["id", "name", "amt"])
     df2 = spark.createDataFrame([(1, "x", 100), (2, "y", 200)], ["id", "name", "amt"])
     result = evaluator.evaluate(
-        DualRowsAssertEqual(fields=[ExprColumn(expr="id")]),
+        DualRowsAssertEqual(fields=(ExprColumn(expr="id"),)),
         [df1, df2],
     )
     assert result.passed is True
@@ -454,7 +495,7 @@ def test_rows_equal_specific_fields_fail():
     df1 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
     df2 = spark.createDataFrame([(1, "a"), (1, "x")], ["id", "name"])
     result = evaluator.evaluate(
-        DualRowsAssertEqual(fields=[ExprColumn(expr="id")]),
+        DualRowsAssertEqual(fields=(ExprColumn(expr="id"),)),
         [df1, df2],
     )
     assert result.passed is False
@@ -462,7 +503,7 @@ def test_rows_equal_specific_fields_fail():
 
 def test_rows_equal_requires_two_dfs():
     result = evaluator.evaluate(
-        DualRowsAssertEqual(fields=[ExprColumn(expr="id")]),
+        DualRowsAssertEqual(fields=(ExprColumn(expr="id"),)),
         [
             spark.createDataFrame([(1,)], ["id"]),
             spark.createDataFrame([(1,)], ["id"]),
@@ -477,7 +518,7 @@ def test_rows_delta_approx_pass():
     df1 = spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ["id", "name"])
     df2 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
     result = evaluator.evaluate(
-        DualRowsAssertDeltaApprox(fields=[ExprColumn(expr="id")], delta=1),
+        DualRowsAssertEqual(fields=(ExprColumn(expr="id"),), row_delta=1),
         [df1, df2],
     )
     assert result.passed is True
@@ -487,7 +528,7 @@ def test_rows_delta_approx_fail():
     df1 = spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ["id", "name"])
     df2 = spark.createDataFrame([(1, "a")], ["id", "name"])
     result = evaluator.evaluate(
-        DualRowsAssertDeltaApprox(fields=[ExprColumn(expr="id")], delta=1),
+        DualRowsAssertEqual(fields=(ExprColumn(expr="id"),), row_delta=1),
         [df1, df2],
     )
     assert result.passed is False
@@ -497,7 +538,7 @@ def test_rows_ratio_approx_pass():
     df1 = spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ["id", "name"])
     df2 = spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"])
     result = evaluator.evaluate(
-        DualRowsAssertRatioApprox(fields=[ExprColumn(expr="id")], ratio=0.5),
+        DualRowsAssertEqual(fields=(ExprColumn(expr="id"),), row_ratio=0.5),
         [df1, df2],
     )
     assert result.passed is True
@@ -507,7 +548,7 @@ def test_rows_ratio_approx_fail():
     df1 = spark.createDataFrame([(1, "a"), (2, "b"), (3, "c")], ["id", "name"])
     df2 = spark.createDataFrame([(1, "a")], ["id", "name"])
     result = evaluator.evaluate(
-        DualRowsAssertRatioApprox(fields=[ExprColumn(expr="id")], ratio=0.5),
+        DualRowsAssertEqual(fields=(ExprColumn(expr="id"),), row_ratio=0.5),
         [df1, df2],
     )
     assert result.passed is False
@@ -518,7 +559,7 @@ def test_dual_join_equal_failure_sample():
     left = spark.createDataFrame([(1, "a", 100), (2, "b", 200)], ["id", "name", "amt"])
     right = spark.createDataFrame([(1, "a", 999), (2, "b", 200)], ["id", "name", "amt"])
     result = sample_eval.evaluate(
-        DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="amt")]),
+        DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="amt"),)),
         [left, right],
     )
     assert result.passed is False
@@ -532,7 +573,7 @@ def test_dual_join_equal_failure_sample_disabled():
     left = spark.createDataFrame([(1, "a", 100)], ["id", "name", "amt"])
     right = spark.createDataFrame([(1, "a", 999)], ["id", "name", "amt"])
     result = sample_eval.evaluate(
-        DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="amt")]),
+        DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="amt"),)),
         [left, right],
     )
     assert result.passed is False
@@ -544,7 +585,7 @@ def test_dual_join_no_violations_no_failure_sample():
     left = spark.createDataFrame([(1, "a", 100)], ["id", "name", "amt"])
     right = spark.createDataFrame([(1, "a", 100)], ["id", "name", "amt"])
     result = sample_eval.evaluate(
-        DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="amt")]),
+        DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="amt"),)),
         [left, right],
     )
     assert result.passed is True
@@ -556,7 +597,10 @@ def test_multi_agg_no_failure_sample():
     df1 = spark.createDataFrame([(100,), (200,)], ["amt"])
     df2 = spark.createDataFrame([(100,), (100,)], ["amt"])
     result = sample_eval.evaluate(
-        MultiAggAssertEqual(agg=AggFunc(func="sum({col})"), fields=[ExprColumn(expr="amt")]),
+        MultiAggAssertEqual(
+            agg=LambdaFunc(param_names=("col",), template="sum({col})"),
+            fields=(ExprColumn(expr="amt"),),
+        ),
         [df1, df2],
     )
     assert result.passed is False

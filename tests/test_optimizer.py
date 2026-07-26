@@ -4,10 +4,10 @@ from anno_sql_test.evaluators.spark.evaluator import (
     SparkFusedAssertionEvaluator,
 )
 from anno_sql_test.models import (
-    AggFunc,
     DualJoinAssertEqual,
     ExprColumn,
     FusedAssertion,
+    LambdaFunc,
     MultiAggAssertEqual,
     SingleAssertAll,
     SingleAssertEmpty,
@@ -51,7 +51,8 @@ class TestSparkFusedAssertionEvaluator:
         evaluator = SparkFusedAssertionEvaluator()
         df1 = spark.createDataFrame([(1,)], ["a"])
         df2 = spark.createDataFrame([(2,)], ["a"])
-        fused = FusedAssertion([MultiAggAssertEqual(agg=AggFunc(func="count({col})"), fields=[ExprColumn(expr="*")])])
+        func = LambdaFunc(param_names=("col",), template="count({col})")
+        fused = FusedAssertion([MultiAggAssertEqual(agg=func, fields=(ExprColumn(expr="*"),))])
         results = evaluator.evaluate(fused, [df1, df2])
         assert len(results) == 1
         assert results[0].passed is True
@@ -60,7 +61,7 @@ class TestSparkFusedAssertionEvaluator:
         evaluator = SparkFusedAssertionEvaluator()
         df1 = spark.createDataFrame([(1, 10)], ["id", "a"])
         df2 = spark.createDataFrame([(1, 10)], ["id", "a"])
-        fused = FusedAssertion([DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="a")])])
+        fused = FusedAssertion([DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="a"),))])
         results = evaluator.evaluate(fused, [df1, df2])
         assert len(results) == 1
         assert results[0].passed is True
@@ -69,8 +70,8 @@ class TestSparkFusedAssertionEvaluator:
         evaluator = SparkFusedAssertionEvaluator()
         df = spark.createDataFrame([(1, 10, 100)], ["id", "a", "b"])
         fused = FusedAssertion([
-            DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="a")]),
-            DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="b")]),
+            DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="a"),)),
+            DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="b"),)),
         ])
         results = evaluator.evaluate(fused, [df, df])
         assert len(results) == 2
@@ -81,8 +82,8 @@ class TestSparkFusedAssertionEvaluator:
         evaluator = SparkFusedAssertionEvaluator()
         df = spark.createDataFrame([(1, 10, 100)], ["id", "a", "b"])
         fused = FusedAssertion([
-            DualJoinAssertEqual(keys=[ExprColumn(expr="id")], values=[ExprColumn(expr="a")]),
-            DualJoinAssertEqual(keys=[ExprColumn(expr="a")], values=[ExprColumn(expr="b")]),
+            DualJoinAssertEqual(keys=(ExprColumn(expr="id"),), values=(ExprColumn(expr="a"),)),
+            DualJoinAssertEqual(keys=(ExprColumn(expr="a"),), values=(ExprColumn(expr="b"),)),
         ])
         results = evaluator.evaluate(fused, [df, df])
         assert len(results) == 2

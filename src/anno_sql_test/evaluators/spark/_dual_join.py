@@ -19,7 +19,6 @@ from anno_sql_test.evaluators.spark._base import (
     DelegatingStepwiseSparkFusedEvaluator,
 )
 from anno_sql_test.evaluators.spark._utils import (
-    ColumnComparator,
     ColumnTypeChecker,
     NamedColumn,
     _batch_validate_types,
@@ -35,15 +34,14 @@ from anno_sql_test.models import (
     ColumnSpec,
     DualJoinAssertEqual,
     DualJoinAssertion,
-    DualJoinAssertNumericDeltaApprox,
-    DualJoinAssertNumericRatioApprox,
+    DualJoinAssertLambda,
+    DualJoinAssertNumericApprox,
     DualJoinAssertTemporalApprox,
-    DualRowsAssertDeltaApprox,
     DualRowsAssertEqual,
     DualRowsAssertion,
-    DualRowsAssertRatioApprox,
     ExprColumn,
     FusedAssertion,
+    LambdaFunc,
 )
 
 
@@ -97,7 +95,7 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
 
     @classmethod
     def prepare_shared(
-        cls, dataframes: list[DataFrame], keys: list[ColumnSpec], values: list[NamedColumn],
+        cls, dataframes: list[DataFrame], keys: list[ColumnSpec], values: list[NamedColumn], join_type: str,
     ) -> DualJoinContext:
         left, right = dataframes[0], dataframes[1]
         resolved_keys = resolve_fields(keys, dataframes)
@@ -110,7 +108,7 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
 
         key_names = left_prep.columns[1:1 + len(key_cols)]
         val_names = left_prep.columns[1 + len(key_cols):]
-        df = left_prep.join(right_prep, key_names, "fullouter")
+        df = left_prep.join(right_prep, key_names, join_type)
         has_left = F.expr(f"{cls.LEFT_DF_ALIAS}._lm").isNotNull()
         has_right = F.expr(f"{cls.RIGHT_DF_ALIAS}._rm").isNotNull()
         df = df.withColumn(
@@ -135,8 +133,8 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
 
     def prepare(self, assertion: T, dataframes: list[DataFrame]) -> DualJoinContext:
         self.logger.debug("Preparing %s: keys=%s", type(assertion).__name__, assertion.keys)
-        values = self.prepare_values(dataframes, assertion.values)
-        ctx = self.prepare_shared(dataframes, assertion.keys, values)
+        values = self.prepare_values(dataframes, list(assertion.values))
+        ctx = self.prepare_shared(dataframes, list(assertion.keys), values, assertion.join_type)
         if self._sample_count > 0:
             ctx.dataframe.persist(StorageLevel.DISK_ONLY)
         return ctx
@@ -154,11 +152,19 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
         cmps = []
         for name in prepared.original_values:
             v = prepared.col_for(name, prepared.namespace)
-            lv = F.expr(f"{self.LEFT_DF_ALIAS}.{v}")
-            rv = F.expr(f"{self.RIGHT_DF_ALIAS}.{v}")
-            both_null = lv.isNull() & rv.isNull()
-            both_not_null_and_comp = lv.isNotNull() & rv.isNotNull() & comparator(lv, rv)
-            cmps.append(both_null | both_not_null_and_comp)
+            lv_str = f"{self.LEFT_DF_ALIAS}.{v}"
+            rv_str = f"{self.RIGHT_DF_ALIAS}.{v}"
+            lv = F.expr(lv_str)
+            rv = F.expr(rv_str)
+
+            cmp = (lv.isNull() & rv.isNull()) | (
+                lv.isNotNull() & rv.isNotNull() & F.expr(comparator.format(lv_str, rv_str))
+            )
+
+            cmps.append(cmp)
+
+        cmps.append(F.col(self._JOIN_TYPE_COL) == 0)
+
         return cmps
 
     def build(self, assertion: T, prepared: DualJoinContext) -> list[Column]:
@@ -168,13 +174,23 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
 
         rst = [
             F.count(F.when(~cmp, 1)).alias(prepared.col_for(name, prepared.namespace))
-            for name, cmp in zip(prepared.original_values, cmps)
+            for name, cmp in zip(prepared.original_values, cmps[:len(prepared.original_values)])
         ]
         rst.append(total_violated)
         return rst
 
     def execute(self, prepared: DualJoinContext, plan: list[Column]) -> Row:
         return prepared.dataframe.agg(prepared.total, *plan).collect()[0]
+
+    @staticmethod
+    def _check_row_tolerance(assertion: T, total_rows: int, total_violated: int) -> bool:
+        row_ratio = assertion.row_ratio
+        row_delta = assertion.row_delta
+        if row_delta > 0:
+            return total_violated <= row_delta
+        if row_ratio > 0.0:
+            return total_violated <= total_rows * row_ratio if total_rows > 0 else True
+        return total_violated == 0
 
     def finalize(
         self, assertion: T, step_result: StepResult[DualJoinContext, list[Column], Row],
@@ -184,10 +200,11 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
         tv_name = self._total_violated_col(prepared.namespace)
         total_violated = exec_result[tv_name]
         self.logger.debug("Finalizing %s: %d violated rows", type(assertion).__name__, total_violated)
-        if total_violated == 0:
-            return [AssertionResult(assertion=assertion, passed=True)]
 
         total_rows = exec_result[self.TOTAL_COL]
+        if self._check_row_tolerance(assertion, total_rows, total_violated):
+            return [AssertionResult(assertion=assertion, passed=True)]
+
         details = []
         for original_name in prepared.original_values:
             name = prepared.col_for(original_name, prepared.namespace)
@@ -260,44 +277,44 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
         return result if result else None
 
     @abstractmethod
-    def get_comparator(self, assertion: T) -> ColumnComparator:
+    def get_comparator(self, assertion: T) -> LambdaFunc:
         ...
 
     def get_type_checker(self) -> ColumnTypeChecker | None:
         return None
 
 
+class DualJoinAssertLambdaEvaluator(BaseDualJoinAssertEvaluator[DualJoinAssertLambda]):
+    def get_comparator(self, assertion: DualJoinAssertLambda) -> LambdaFunc:
+        return assertion.comparator
+
+
 class DualJoinAssertEqualEvaluator(BaseDualJoinAssertEvaluator[DualJoinAssertEqual]):
-    def get_comparator(self, assertion: DualJoinAssertEqual) -> ColumnComparator:
-        return lambda lv, rv: lv == rv
+    def get_comparator(self, assertion: DualJoinAssertEqual) -> LambdaFunc:
+        return LambdaFunc.from_str("(a, b) -> a = b")
 
 
-class DualJoinAssertNumericRatioApproxEvaluator(BaseDualJoinAssertEvaluator[DualJoinAssertNumericRatioApprox]):
-    def get_comparator(self, assertion: DualJoinAssertNumericRatioApprox) -> ColumnComparator:
-        ratio = assertion.ratio
-        return lambda lv, rv: (
-            F.abs(lv.cast("double") - rv.cast("double"))
-            <= ratio * F.greatest(F.abs(lv.cast("double")), F.abs(rv.cast("double")))
-        )
-
-    def get_type_checker(self):
-        return _check_numeric
-
-
-class DualJoinAssertNumericDeltaApproxEvaluator(BaseDualJoinAssertEvaluator[DualJoinAssertNumericDeltaApprox]):
-    def get_comparator(self, assertion: DualJoinAssertNumericDeltaApprox) -> ColumnComparator:
-        delta = assertion.delta
-        return lambda lv, rv: F.abs(lv.cast("double") - rv.cast("double")) <= delta
+class DualJoinAssertNumericApproxEvaluator(BaseDualJoinAssertEvaluator[DualJoinAssertNumericApprox]):
+    def get_comparator(self, assertion: DualJoinAssertNumericApprox) -> LambdaFunc:
+        if assertion.val_ratio:
+            comparator = LambdaFunc.from_str(
+                f'(a, b) -> abs(a - b) <= {assertion.val_ratio} * greatest(abs(a), abs(b))',
+            )
+        elif assertion.val_delta:
+            comparator = LambdaFunc.from_str(f"(a, b) -> abs(a - b) <= {assertion.val_delta}")
+        else:
+            comparator = LambdaFunc.from_str("(a, b) -> a = b")
+        return comparator
 
     def get_type_checker(self):
         return _check_numeric
 
 
 class DualJoinAssertTemporalApproxEvaluator(BaseDualJoinAssertEvaluator[DualJoinAssertTemporalApprox]):
-
-    def get_comparator(self, assertion: DualJoinAssertTemporalApprox) -> ColumnComparator:
-        ds = assertion.duration_seconds
-        return lambda lv, rv: F.abs(lv.cast("double") - rv.cast("double")) <= F.lit(ds)
+    def get_comparator(self, assertion: DualJoinAssertTemporalApprox) -> LambdaFunc:
+        return LambdaFunc.from_str(
+            f"(a, b) -> abs(cast(a as double) - cast(b as double)) <= {assertion.duration_seconds}",
+        )
 
     def get_type_checker(self):
         return _check_temporal
@@ -312,14 +329,20 @@ class BaseRowsAssertEvaluator[T: DualRowsAssertion](
 
     def __init__(self, sample_count: int = 0):
         self._sample_count = sample_count
-        self._join_evaluator = DualJoinAssertEqualEvaluator(sample_count)
+        self._join_evaluator = DualJoinAssertLambdaEvaluator(sample_count)
 
     @abstractmethod
     def _failure_message(self, assertion: T, total_count: int, total_violated: int) -> str | None:
         ...
 
-    def _convert_assertion(self, assertion: T) -> DualJoinAssertEqual:
-        return DualJoinAssertEqual(keys=assertion.fields, values=[ExprColumn(expr=self._COUNT_COL)])
+    def _convert_assertion(self, assertion: T) -> DualJoinAssertLambda:
+        return DualJoinAssertLambda(
+            keys=assertion.fields,
+            values=(ExprColumn(expr=self._COUNT_COL),),
+            comparator=LambdaFunc.from_str("(a, b) -> a = b"),
+            row_ratio=assertion.row_ratio,
+            row_delta=assertion.row_delta,
+        )
 
     def validate(self, assertion: Any, dataframes: list[DataFrame]) -> list[tuple[str, Assertion]]:
         if len(dataframes) != 2:
@@ -335,13 +358,14 @@ class BaseRowsAssertEvaluator[T: DualRowsAssertion](
         values = [NamedColumn(name=self._COUNT_COL, column=F.col(self._COUNT_COL))]
         left_agg = dataframes[0].groupBy(*fields).agg(F.count(F.lit(1)).alias(self._COUNT_COL))
         right_agg = dataframes[1].groupBy(*fields).agg(F.count(F.lit(1)).alias(self._COUNT_COL))
-        ctx = BaseDualJoinAssertEvaluator.prepare_shared([left_agg, right_agg], field_specs, values)
+        ctx = BaseDualJoinAssertEvaluator.prepare_shared([left_agg, right_agg], field_specs, values, "full")
         if self._sample_count > 0:
             ctx.dataframe.persist(StorageLevel.DISK_ONLY)
         return ctx
 
     def build(self, assertion: Any, prepared: DualJoinContext) -> list[Column]:
         join_assertion = self._convert_assertion(assertion)
+        self._join_evaluator.get_comparator(join_assertion)
         rst = self._join_evaluator.build(join_assertion, prepared)
         left_count = F.expr(f"coalesce({BaseDualJoinAssertEvaluator.LEFT_DF_ALIAS}.{self._COUNT_COL}, 0)")
         right_count = F.expr(f"coalesce({BaseDualJoinAssertEvaluator.RIGHT_DF_ALIAS}.{self._COUNT_COL}, 0)")
@@ -379,36 +403,11 @@ class DualRowsAssertEqualEvaluator(BaseRowsAssertEvaluator[DualRowsAssertEqual])
     def _failure_message(
         self, assertion: DualRowsAssertEqual, total_count: int, total_violated: int,
     ) -> str | None:
-        if total_violated == 0:
+        if BaseDualJoinAssertEvaluator._check_row_tolerance(assertion, total_count, total_violated):
             return None
         return (
             f"{total_violated} of {total_count} group(s) "
             f"({total_violated / total_count * 100:.1f}%) have count mismatch"
-        )
-
-
-class DualRowsAssertDeltaApproxEvaluator(BaseRowsAssertEvaluator[DualRowsAssertDeltaApprox]):
-    def _failure_message(
-        self, assertion: DualRowsAssertDeltaApprox, total_count: int, total_violated: int,
-    ) -> str | None:
-        if total_violated <= assertion.delta:
-            return None
-        return (
-            f"{total_violated} group(s) with count mismatch exceeds delta {assertion.delta:.0f}, "
-            f"affecting {total_violated / total_count * 100:.1f}% of {total_count} group(s)"
-        )
-
-
-class DualRowsAssertRatioApproxEvaluator(BaseRowsAssertEvaluator[DualRowsAssertRatioApprox]):
-    def _failure_message(
-        self, assertion: DualRowsAssertRatioApprox, total_count: int, total_violated: int,
-    ) -> str | None:
-        if total_count == 0 or total_violated / total_count <= assertion.ratio:
-            return None
-        return (
-            f"{total_violated} of {total_count} group(s) "
-            f"({total_violated / total_count * 100:.1f}%) with count mismatch "
-            f"exceeds ratio {assertion.ratio:.0%}"
         )
 
 
@@ -419,9 +418,9 @@ class DualJoinFusedAssertionEvaluator(
         self._sample_count = sample_count
         self._assertion_evaluators: dict[type[DualJoinAssertion], BaseDualJoinAssertEvaluator[Any]] = {
             DualJoinAssertEqual: DualJoinAssertEqualEvaluator(sample_count=sample_count),
-            DualJoinAssertNumericRatioApprox: DualJoinAssertNumericRatioApproxEvaluator(sample_count=sample_count),
-            DualJoinAssertNumericDeltaApprox: DualJoinAssertNumericDeltaApproxEvaluator(sample_count=sample_count),
+            DualJoinAssertNumericApprox: DualJoinAssertNumericApproxEvaluator(sample_count=sample_count),
             DualJoinAssertTemporalApprox: DualJoinAssertTemporalApproxEvaluator(sample_count=sample_count),
+            DualJoinAssertLambda: DualJoinAssertLambdaEvaluator(sample_count=sample_count),
         }
 
     def get_evaluator_map(self) -> Mapping[
@@ -435,13 +434,13 @@ class DualJoinFusedAssertionEvaluator(
     ) -> list[DualJoinContext]:
         self.logger.debug("Fused prepare for %d DualJoinAssertion assertions", len(assertion.assertions))
         all_values = []
-        keys = assertion.assertions[0].keys
+        keys = list(assertion.assertions[0].keys)
         for i, asrt in enumerate(assertion.assertions):
             evaluator = self._assertion_evaluators[type(asrt)]
-            values = evaluator.prepare_values(dataframes, asrt.values, namespace=f"asrt{i}")
+            values = evaluator.prepare_values(dataframes, list(asrt.values), namespace=f"asrt{i}")
             all_values.append(values)
         prepared_all = BaseDualJoinAssertEvaluator.prepare_shared(
-            dataframes, keys, list(chain.from_iterable(all_values)),
+            dataframes, keys, list(chain.from_iterable(all_values)), assertion.assertions[0].join_type,
         )
         if self._sample_count > 0:
             prepared_all.dataframe.persist(StorageLevel.DISK_ONLY)

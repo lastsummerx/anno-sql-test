@@ -8,6 +8,7 @@ from anno_sql_test.models import (
     ExprColumn,
     FieldType,
     GlobTemplateColumn,
+    LambdaFunc,
 )
 
 _ISO_PATTERN = re.compile(
@@ -46,11 +47,19 @@ def _parse_iso_duration_to_seconds(duration: str, source: str) -> float:
     return total
 
 
-def _parse_float(value: str, label: str, source: str) -> float:
+def _parse_primitive[T: int | float](value: str, label: str, source: str, dtype: type[T]) -> T:
     try:
-        return float(value)
-    except ValueError:
-        raise ParseError(f"Invalid {label} '{value}' in: {source}") from None
+        return dtype(value)
+    except (ValueError, TypeError) as e:
+        raise ParseError(f"Invalid {label} '{value}' in: {source}") from e
+
+
+def _parse_float(value: str, label: str, source: str) -> float:
+    return _parse_primitive(value, label, source, float)
+
+
+def _parse_int(value: str, label: str, source: str) -> int:
+    return _parse_primitive(value, label, source, int)
 
 
 def _calc_top_before(s: str) -> list[bool]:
@@ -202,11 +211,11 @@ def tokenize(s: str) -> list[Token]:
     return tokens
 
 
-def _extract_glob_and_template(expr: str) -> tuple[str, str]:
+def _extract_glob(expr: str) -> str:
     tokens = tokenize(expr)
     star_idx = next((i for i, t in enumerate(tokens) if t.kind == TokenKind.STAR), None)
     if star_idx is None:
-        return expr, '{col}'
+        return expr
 
     start = tokens[star_idx].start
     end = tokens[star_idx].end
@@ -222,9 +231,8 @@ def _extract_glob_and_template(expr: str) -> tuple[str, str]:
         j += 1
 
     glob_pattern = expr[start:tokens[star_idx].start] + '*' + expr[tokens[star_idx].end:end]
-    template = expr[:start] + '{col}' + expr[end:]
 
-    return glob_pattern, template
+    return glob_pattern
 
 
 def _parse_except_patterns(s: str) -> tuple[str, ...]:
@@ -351,18 +359,22 @@ def parse_column_spec(s: str) -> ColumnSpec:
     # Parse EXCEPT clause inside columns()
     inner_expr, except_patterns = _parse_inner_except(inner)
 
-    glob, _ = _extract_glob_and_template(inner_expr)
-    template = rest[:cs] + '{col}' + rest[ce:]
+    glob = _extract_glob(inner_expr)
+    expr = LambdaFunc.from_segments([
+        ('txt', rest[:cs]),
+        ('var', 'col'),
+        ('txt', rest[ce:]),
+    ])
     return GlobTemplateColumn(
         glob=glob,
         type_filter=type_filter,
         excepts=except_patterns,
-        expr=template,
+        expr=expr,
     )
 
 
-def _parse_field_list(s: str, label: str = "fields") -> list[ColumnSpec]:
+def _parse_fields(s: str, label: str = "fields") -> tuple[ColumnSpec, ...]:
     raw = [x.strip() for x in _smart_split(s, ",")]
     if not raw or '' in raw:
         raise ParseError(f"Empty {label} in: {s}")
-    return [parse_column_spec(f) for f in raw]
+    return tuple(parse_column_spec(f) for f in raw)
