@@ -7,6 +7,10 @@ from anno_sql_test.errors import ParseError
 from anno_sql_test.models import (
     Assertion,
     ColumnSpec,
+    DualAggAssertEqual,
+    DualAggAssertNumericDeltaApprox,
+    DualAggAssertNumericRatioApprox,
+    DualAggAssertTemporalApprox,
     DualJoinAssertEqual,
     DualJoinAssertion,
     DualJoinAssertLambda,
@@ -16,10 +20,6 @@ from anno_sql_test.models import (
     DualRowsAssertion,
     GlobTemplateColumn,
     LambdaFunc,
-    MultiAggAssertEqual,
-    MultiAggAssertNumericDeltaApprox,
-    MultiAggAssertNumericRatioApprox,
-    MultiAggAssertTemporalApprox,
     SingleAssertAll,
     SingleAssertAny,
     SingleAssertEmpty,
@@ -88,24 +88,44 @@ class SingleAssertUniqueKeyword(AssertKeyword):
         return SingleAssertUnique(fields=cols)
 
 
-class _BaseMultiAggAssertKeyword(AssertKeyword):
+class _BaseDualAggAssertKeyword(AssertKeyword):
     _COL = "col"
+    _GROUP_BY_REGEX: ClassVar[re.Pattern[str]] = re.compile(r'\bgroup\s+by\b', re.IGNORECASE)
 
     @classmethod
-    def _parse_agg_fields(cls, parse_input: ParseInput) -> tuple[LambdaFunc, tuple[ColumnSpec, ...]]:
+    def _parse_group_by(
+        cls, fields_str: str,
+    ) -> tuple[tuple[ColumnSpec, ...], tuple[ColumnSpec, ...]]:
+        m = cls._GROUP_BY_REGEX.search(fields_str)
+        if m:
+            before = fields_str[:m.start()].strip()
+            after = fields_str[m.end():].strip()
+            fields = _parse_fields(before) if before else ()
+            keys = _parse_fields(after) if after else ()
+            return fields, keys
+        return _parse_fields(fields_str), ()
+
+    @classmethod
+    def _parse_agg_fields(
+        cls, parse_input: ParseInput,
+    ) -> tuple[LambdaFunc, tuple[ColumnSpec, ...], tuple[ColumnSpec, ...]]:
         parts = _smart_split(parse_input.rest.strip(), r'\s+', 1)
         if len(parts) < 2 or '' in parts:
             raise ParseError(f"Expected '<agg> <fields>' in: {parse_input.source}")
-        return cls._make_agg_template(parts[0]), _parse_fields(parts[1])
+        agg = cls._make_agg_template(parts[0])
+        fields, keys = cls._parse_group_by(parts[1])
+        return agg, fields, keys
 
     @classmethod
     def _parse_agg_param_fields(
         cls, parse_input: ParseInput, param_label: str = "param",
-    ) -> tuple[LambdaFunc, str, tuple[ColumnSpec, ...]]:
+    ) -> tuple[LambdaFunc, str, tuple[ColumnSpec, ...], tuple[ColumnSpec, ...]]:
         parts = _smart_split(parse_input.rest.strip(), r'\s+', 2)
         if len(parts) < 3 or '' in parts:
             raise ParseError(f"Expected '<agg> <{param_label}> <fields>' in: {parse_input.source}")
-        return cls._make_agg_template(parts[0]), parts[1], _parse_fields(parts[2])
+        agg = cls._make_agg_template(parts[0])
+        fields, keys = cls._parse_group_by(parts[2])
+        return agg, parts[1], fields, keys
 
     @classmethod
     def _make_agg_template(cls, agg: str) -> LambdaFunc:
@@ -114,31 +134,31 @@ class _BaseMultiAggAssertKeyword(AssertKeyword):
         return LambdaFunc.from_str(f'{cls._COL} -> {agg}({cls._COL})')
 
 
-class MultiAggAssertEqualKeyword(_BaseMultiAggAssertKeyword):
+class DualAggAssertEqualKeyword(_BaseDualAggAssertKeyword):
     def build(self, parse_input: ParseInput) -> Assertion:
-        agg, fields = self._parse_agg_fields(parse_input)
-        return MultiAggAssertEqual(agg=agg, fields=fields)
+        agg, fields, keys = self._parse_agg_fields(parse_input)
+        return DualAggAssertEqual(agg=agg, fields=fields, keys=keys)
 
 
-class MultiAggAssertNumericRatioKeyword(_BaseMultiAggAssertKeyword):
+class DualAggAssertNumericRatioKeyword(_BaseDualAggAssertKeyword):
     def build(self, parse_input: ParseInput) -> Assertion:
-        agg, ratio_str, fields = self._parse_agg_param_fields(parse_input, "ratio")
+        agg, ratio_str, fields, keys = self._parse_agg_param_fields(parse_input, "ratio")
         ratio = _parse_float(ratio_str, "ratio", parse_input.source)
-        return MultiAggAssertNumericRatioApprox(agg=agg, fields=fields, ratio=ratio)
+        return DualAggAssertNumericRatioApprox(agg=agg, fields=fields, keys=keys, ratio=ratio)
 
 
-class MultiAggAssertNumericDeltaKeyword(_BaseMultiAggAssertKeyword):
+class DualAggAssertNumericDeltaKeyword(_BaseDualAggAssertKeyword):
     def build(self, parse_input: ParseInput) -> Assertion:
-        agg, delta_str, fields = self._parse_agg_param_fields(parse_input, "delta")
+        agg, delta_str, fields, keys = self._parse_agg_param_fields(parse_input, "delta")
         delta = _parse_float(delta_str, "delta", parse_input.source)
-        return MultiAggAssertNumericDeltaApprox(agg=agg, fields=fields, delta=delta)
+        return DualAggAssertNumericDeltaApprox(agg=agg, fields=fields, keys=keys, delta=delta)
 
 
-class MultiAggAssertTemporalKeyword(_BaseMultiAggAssertKeyword):
+class DualAggAssertTemporalKeyword(_BaseDualAggAssertKeyword):
     def build(self, parse_input: ParseInput) -> Assertion:
-        agg, duration, fields = self._parse_agg_param_fields(parse_input, "duration")
+        agg, duration, fields, keys = self._parse_agg_param_fields(parse_input, "duration")
         duration_seconds = _parse_iso_duration_to_seconds(duration, parse_input.source)
-        return MultiAggAssertTemporalApprox(agg=agg, fields=fields, duration_seconds=duration_seconds)
+        return DualAggAssertTemporalApprox(agg=agg, fields=fields, keys=keys, duration_seconds=duration_seconds)
 
 
 @dataclass
@@ -311,10 +331,10 @@ _KEYWORD_MAP: dict[str, AnnotationKeyword] = {
     "assert_empty": SingleAssertEmptyKeyword(),
     "assert_not_empty": SingleAssertNotEmptyKeyword(),
     "assert_unique": SingleAssertUniqueKeyword(),
-    "assert_agg_equal": MultiAggAssertEqualKeyword(),
-    "assert_agg_numeric_ratio_approx": MultiAggAssertNumericRatioKeyword(),
-    "assert_agg_numeric_delta_approx": MultiAggAssertNumericDeltaKeyword(),
-    "assert_agg_temporal_approx": MultiAggAssertTemporalKeyword(),
+    "assert_agg_equal": DualAggAssertEqualKeyword(),
+    "assert_agg_numeric_ratio_approx": DualAggAssertNumericRatioKeyword(),
+    "assert_agg_numeric_delta_approx": DualAggAssertNumericDeltaKeyword(),
+    "assert_agg_temporal_approx": DualAggAssertTemporalKeyword(),
     "assert_join_equal": DualJoinAssertEqualKeyword(),
     "assert_join_numeric_approx": DualJoinAssertNumericApproxKeyword(),
     "assert_join_temporal_approx": DualJoinAssertTemporalKeyword(),

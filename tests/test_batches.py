@@ -1,21 +1,21 @@
 from pyspark.sql import SparkSession
 
+from anno_sql_test.evaluators.spark._dual_agg import (
+    DualAggFusedAssertionEvaluator,
+)
 from anno_sql_test.evaluators.spark._dual_join import (
     DualJoinFusedAssertionEvaluator,
-)
-from anno_sql_test.evaluators.spark._multi_agg import (
-    MultiAggFusedAssertionEvaluator,
 )
 from anno_sql_test.evaluators.spark._single import (
     SinglePredicateFusedAssertionEvaluator,
 )
 from anno_sql_test.models import (
+    DualAggAssertEqual,
     DualJoinAssertEqual,
     DualJoinAssertNumericApprox,
     ExprColumn,
     FusedAssertion,
     LambdaFunc,
-    MultiAggAssertEqual,
     SingleAssertAll,
     SingleAssertAny,
     SingleAssertNone,
@@ -178,9 +178,9 @@ class TestMultiAggFusedAssertionEvaluator:
     def test_single_agg_pass(self):
         df1 = spark.createDataFrame([(1,)], ["a"])
         df2 = spark.createDataFrame([(2,)], ["a"])
-        evaluator = MultiAggFusedAssertionEvaluator()
+        evaluator = DualAggFusedAssertionEvaluator()
         fused = FusedAssertion(
-            assertions=[MultiAggAssertEqual(
+            assertions=[DualAggAssertEqual(
                 agg=LambdaFunc(param_names=("col",), template="count({col})"), fields=(ExprColumn(expr="*"),)),
             ],
         )
@@ -191,9 +191,9 @@ class TestMultiAggFusedAssertionEvaluator:
     def test_single_agg_fail(self):
         df1 = spark.createDataFrame([(1,)], ["a"])
         df2 = spark.createDataFrame([(1,), (2,)], ["a"])
-        evaluator = MultiAggFusedAssertionEvaluator()
+        evaluator = DualAggFusedAssertionEvaluator()
         fused = FusedAssertion(
-            assertions=[MultiAggAssertEqual(
+            assertions=[DualAggAssertEqual(
                 agg=LambdaFunc(param_names=("col",), template="count({col})"), fields=(ExprColumn(expr="*"),)),
             ],
         )
@@ -204,12 +204,12 @@ class TestMultiAggFusedAssertionEvaluator:
     def test_multiple_aggs_fused(self):
         df1 = spark.createDataFrame([(1, 10)], ["a", "b"])
         df2 = spark.createDataFrame([(2, 20)], ["a", "b"])
-        evaluator = MultiAggFusedAssertionEvaluator()
+        evaluator = DualAggFusedAssertionEvaluator()
         fused = FusedAssertion(assertions=[
-            MultiAggAssertEqual(
+            DualAggAssertEqual(
                 agg=LambdaFunc(param_names=("col",), template="count({col})"), fields=(ExprColumn(expr="*"),),
             ),
-            MultiAggAssertEqual(
+            DualAggAssertEqual(
                 agg=LambdaFunc(param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="a"),),
             ),
         ])
@@ -221,12 +221,12 @@ class TestMultiAggFusedAssertionEvaluator:
     def test_specific_fields(self):
         df1 = spark.createDataFrame([(1, 10)], ["a", "b"])
         df2 = spark.createDataFrame([(2, 10)], ["a", "b"])
-        evaluator = MultiAggFusedAssertionEvaluator()
+        evaluator = DualAggFusedAssertionEvaluator()
         fused = FusedAssertion(assertions=[
-            MultiAggAssertEqual(
+            DualAggAssertEqual(
                 agg=LambdaFunc(param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="a"),),
             ),
-            MultiAggAssertEqual(
+            DualAggAssertEqual(
                 agg=LambdaFunc(param_names=("col",), template="sum({col})"), fields=(ExprColumn(expr="b"),),
             ),
         ])
@@ -237,16 +237,16 @@ class TestMultiAggFusedAssertionEvaluator:
 
     def test_less_than_two_dataframes(self):
         df1 = spark.createDataFrame([(1,)], ["a"])
-        evaluator = MultiAggFusedAssertionEvaluator()
+        evaluator = DualAggFusedAssertionEvaluator()
         fused = FusedAssertion(
-            assertions=[MultiAggAssertEqual(
+            assertions=[DualAggAssertEqual(
                 agg=LambdaFunc(param_names=("col",), template="count({col})"), fields=(ExprColumn(expr="*"),)),
             ],
         )
         results = evaluator.evaluate(fused, [df1])
         assert len(results) == 1
         assert results[0].passed is False
-        assert "Expected at least 2 DataFrames" in results[0].message
+        assert "Expected exactly 2 DataFrames" in results[0].message
 
 
 class TestDualJoinFusedAssertionEvaluator:

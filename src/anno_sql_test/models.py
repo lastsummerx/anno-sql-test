@@ -103,9 +103,13 @@ class DualJoinAssertion(Assertion):
 
 
 @dataclass
-class MultiAggAssertion(Assertion):
+class DualAggAssertion(Assertion):
     fields: tuple[ColumnSpec, ...]
     agg: LambdaFunc
+    keys: tuple[ColumnSpec, ...] = ()
+
+    def grouping_key(self):
+        return frozenset(self.keys)
 
 
 @dataclass
@@ -151,23 +155,23 @@ class SingleAssertUnique(Assertion):
 
 
 @dataclass
-class MultiAggAssertEqual(MultiAggAssertion):
+class DualAggAssertEqual(DualAggAssertion):
     pass
 
 
 @dataclass
-class MultiAggAssertNumericRatioApprox(MultiAggAssertion):
-    ratio: float
+class DualAggAssertNumericRatioApprox(DualAggAssertion):
+    ratio: float = 0.0
 
 
 @dataclass
-class MultiAggAssertNumericDeltaApprox(MultiAggAssertion):
-    delta: float
+class DualAggAssertNumericDeltaApprox(DualAggAssertion):
+    delta: float = 0.0
 
 
 @dataclass
-class MultiAggAssertTemporalApprox(MultiAggAssertion):
-    duration_seconds: float
+class DualAggAssertTemporalApprox(DualAggAssertion):
+    duration_seconds: float = 0.0
 
 
 @dataclass

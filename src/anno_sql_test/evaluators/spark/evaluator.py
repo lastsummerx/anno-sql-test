@@ -3,11 +3,21 @@ from typing import cast
 
 from pyspark.sql import DataFrame
 
-from anno_sql_test.evaluators.base import BaseFusedAssertionEvaluator, SimpleFusedAssertionEvaluator
+from anno_sql_test.evaluators.base import (
+    BaseFusedAssertionEvaluator,
+    SimpleFusedAssertionEvaluator,
+)
 from anno_sql_test.evaluators.spark._base import (
     BaseSparkEvaluator,
     BaseSparkFusedEvaluator,
     DelegatingStepwiseSparkFusedEvaluator,
+)
+from anno_sql_test.evaluators.spark._dual_agg import (
+    DualAggAssertEqualEvaluator,
+    DualAggAssertNumericDeltaApproxEvaluator,
+    DualAggAssertNumericRatioApproxEvaluator,
+    DualAggAssertTemporalApproxEvaluator,
+    DualAggFusedAssertionEvaluator,
 )
 from anno_sql_test.evaluators.spark._dual_join import (
     DualJoinAssertEqualEvaluator,
@@ -16,13 +26,6 @@ from anno_sql_test.evaluators.spark._dual_join import (
     DualJoinAssertTemporalApproxEvaluator,
     DualJoinFusedAssertionEvaluator,
     DualRowsAssertEqualEvaluator,
-)
-from anno_sql_test.evaluators.spark._multi_agg import (
-    MultiAggAssertEqualEvaluator,
-    MultiAggAssertNumericDeltaApproxEvaluator,
-    MultiAggAssertNumericRatioApproxEvaluator,
-    MultiAggAssertTemporalApproxEvaluator,
-    MultiAggFusedAssertionEvaluator,
 )
 from anno_sql_test.evaluators.spark._single import (
     SingleAssertAllEvaluator,
@@ -36,16 +39,16 @@ from anno_sql_test.evaluators.spark._single import (
 from anno_sql_test.models import (
     Assertion,
     AssertionResult,
+    DualAggAssertEqual,
+    DualAggAssertNumericDeltaApprox,
+    DualAggAssertNumericRatioApprox,
+    DualAggAssertTemporalApprox,
     DualJoinAssertEqual,
     DualJoinAssertLambda,
     DualJoinAssertNumericApprox,
     DualJoinAssertTemporalApprox,
     DualRowsAssertEqual,
     FusedAssertion,
-    MultiAggAssertEqual,
-    MultiAggAssertNumericDeltaApprox,
-    MultiAggAssertNumericRatioApprox,
-    MultiAggAssertTemporalApprox,
     SingleAssertAll,
     SingleAssertAny,
     SingleAssertEmpty,
@@ -66,10 +69,10 @@ class SparkAssertionEvaluator(BaseSparkEvaluator[Assertion]):
             (SingleAssertEmpty, SingleAssertEmptyEvaluator(sample_count=sample_count)),
             (SingleAssertNotEmpty, SingleAssertNotEmptyEvaluator()),
             (SingleAssertUnique, SingleAssertUniqueEvaluator(sample_count=sample_count)),
-            (MultiAggAssertEqual, MultiAggAssertEqualEvaluator()),
-            (MultiAggAssertNumericRatioApprox, MultiAggAssertNumericRatioApproxEvaluator()),
-            (MultiAggAssertNumericDeltaApprox, MultiAggAssertNumericDeltaApproxEvaluator()),
-            (MultiAggAssertTemporalApprox, MultiAggAssertTemporalApproxEvaluator()),
+            (DualAggAssertEqual, DualAggAssertEqualEvaluator()),
+            (DualAggAssertNumericRatioApprox, DualAggAssertNumericRatioApproxEvaluator()),
+            (DualAggAssertNumericDeltaApprox, DualAggAssertNumericDeltaApproxEvaluator()),
+            (DualAggAssertTemporalApprox, DualAggAssertTemporalApproxEvaluator()),
             (DualJoinAssertEqual, DualJoinAssertEqualEvaluator(sample_count=sample_count)),
             (DualJoinAssertNumericApprox, DualJoinAssertNumericApproxEvaluator(sample_count=sample_count)),
             (DualJoinAssertTemporalApprox, DualJoinAssertTemporalApproxEvaluator(sample_count=sample_count)),
@@ -96,7 +99,7 @@ class SparkFusedAssertionEvaluator(BaseSparkFusedEvaluator[Assertion]):
         self._handlers: dict[type[Assertion], BaseFusedAssertionEvaluator] = {}
         evaluators: list[DelegatingStepwiseSparkFusedEvaluator] = [
             SinglePredicateFusedAssertionEvaluator(sample_count=sample_count),
-            MultiAggFusedAssertionEvaluator(),
+            DualAggFusedAssertionEvaluator(),
             DualJoinFusedAssertionEvaluator(sample_count=sample_count),
         ]
         for evaluator in evaluators:

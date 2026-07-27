@@ -108,7 +108,10 @@ class BaseDualJoinAssertEvaluator[T: DualJoinAssertion](
 
         key_names = left_prep.columns[1:1 + len(key_cols)]
         val_names = left_prep.columns[1 + len(key_cols):]
-        df = left_prep.join(right_prep, key_names, join_type)
+        if key_names:
+            df = left_prep.join(right_prep, key_names, join_type)
+        else:
+            df = left_prep.crossJoin(right_prep)
         has_left = F.expr(f"{cls.LEFT_DF_ALIAS}._lm").isNotNull()
         has_right = F.expr(f"{cls.RIGHT_DF_ALIAS}._rm").isNotNull()
         df = df.withColumn(

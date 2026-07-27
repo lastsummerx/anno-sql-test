@@ -4,11 +4,11 @@ from anno_sql_test.evaluators.spark.evaluator import (
     SparkFusedAssertionEvaluator,
 )
 from anno_sql_test.models import (
+    DualAggAssertEqual,
     DualJoinAssertEqual,
     ExprColumn,
     FusedAssertion,
     LambdaFunc,
-    MultiAggAssertEqual,
     SingleAssertAll,
     SingleAssertEmpty,
     SingleAssertNotEmpty,
@@ -52,7 +52,7 @@ class TestSparkFusedAssertionEvaluator:
         df1 = spark.createDataFrame([(1,)], ["a"])
         df2 = spark.createDataFrame([(2,)], ["a"])
         func = LambdaFunc(param_names=("col",), template="count({col})")
-        fused = FusedAssertion([MultiAggAssertEqual(agg=func, fields=(ExprColumn(expr="*"),))])
+        fused = FusedAssertion([DualAggAssertEqual(agg=func, fields=(ExprColumn(expr="*"),))])
         results = evaluator.evaluate(fused, [df1, df2])
         assert len(results) == 1
         assert results[0].passed is True
