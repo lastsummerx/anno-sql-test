@@ -23,6 +23,7 @@ from anno_sql_test.models import (
     SingleAssertEmpty,
     SingleAssertNone,
     SingleAssertNotEmpty,
+    SingleAssertSetEqual,
     SingleAssertUnique,
 )
 from anno_sql_test.parser import parse_file
@@ -631,4 +632,74 @@ def test_parse_dependency_not_found(tmp_path: Path):
     p = tmp_path / "f.sql"
     p.write_text("-- @TEST t\n-- @dependency nonexistent\nselect 1;")
     with pytest.raises(ParseError, match="not found"):
+        parse_file(p)
+
+
+def test_parse_set_equal_basic(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_set_equal status (active, inactive)\nselect 1;")
+    suite = parse_file(p)
+    a = cast(SingleAssertSetEqual, suite.cases[0].assertions[0])
+    assert isinstance(a, SingleAssertSetEqual)
+    assert a.column == ExprColumn(expr="status")
+    assert set(a.set_values) == {"active", "inactive"}
+    assert len(a.set_values) == 2
+
+
+def test_parse_set_equal_expr_column(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_set_equal trim(status) (a, b)\nselect 1;")
+    suite = parse_file(p)
+    a = cast(SingleAssertSetEqual, suite.cases[0].assertions[0])
+    assert isinstance(a, SingleAssertSetEqual)
+    assert a.column == ExprColumn(expr="trim(status)")
+    assert set(a.set_values) == {"a", "b"}
+    assert len(a.set_values) == 2
+
+
+def test_parse_set_equal_single_value(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_set_equal x (only)\nselect 1;")
+    suite = parse_file(p)
+    a = cast(SingleAssertSetEqual, suite.cases[0].assertions[0])
+    assert a.set_values == ("only",)
+
+
+def test_parse_set_equal_null_in_set(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_set_equal x (a, null)\nselect 1;")
+    suite = parse_file(p)
+    a = cast(SingleAssertSetEqual, suite.cases[0].assertions[0])
+    assert set(a.set_values) == {"a", "null"}
+    assert len(a.set_values) == 2
+
+
+def test_parse_set_equal_numeric_values(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_set_equal id (1, 2, 3)\nselect 1;")
+    suite = parse_file(p)
+    a = cast(SingleAssertSetEqual, suite.cases[0].assertions[0])
+    assert a.column == ExprColumn(expr="id")
+    assert set(a.set_values) == {"1", "2", "3"}
+    assert len(a.set_values) == 3
+
+
+def test_parse_set_equal_missing_parens(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_set_equal x a\nselect 1;")
+    with pytest.raises(ParseError, match="surround"):
+        parse_file(p)
+
+
+def test_parse_set_equal_no_set(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_set_equal x\nselect 1;")
+    with pytest.raises(ParseError, match="Expected.*<col> <set>"):
+        parse_file(p)
+
+
+def test_parse_set_equal_empty_set(tmp_path: Path):
+    p = tmp_path / "f.sql"
+    p.write_text("-- @TEST t\n-- @assert_set_equal x ()\nselect 1;")
+    with pytest.raises(ParseError, match="Empty set"):
         parse_file(p)

@@ -11,6 +11,7 @@ from anno_sql_test.models import (
     SingleAssertEmpty,
     SingleAssertNone,
     SingleAssertNotEmpty,
+    SingleAssertSetEqual,
     SingleAssertUnique,
 )
 
@@ -382,3 +383,103 @@ def test_assert_pass_has_no_failure_sample():
     result = sample_eval.evaluate(SingleAssertAll(predicate=ExprColumn(expr="a > 0")), [df])
     assert result.passed is True
     assert result.failure_sample is None
+
+
+def test_assert_set_equal_pass():
+    df = spark.createDataFrame([("a",), ("b",), ("c",)], ["x"])
+    result = evaluator.evaluate(SingleAssertSetEqual(
+        column=ExprColumn(expr="x"), set_values=("a", "b", "c"),
+    ), [df])
+    assert result.passed is True
+
+
+def test_assert_set_equal_fail_missing():
+    df = spark.createDataFrame([("a",), ("b",)], ["x"])
+    result = evaluator.evaluate(SingleAssertSetEqual(
+        column=ExprColumn(expr="x"), set_values=("a", "b", "c"),
+    ), [df])
+    assert result.passed is False
+    assert "missing" in result.message
+
+
+def test_assert_set_equal_fail_extra():
+    df = spark.createDataFrame([("a",), ("b",), ("c",), ("d",)], ["x"])
+    result = evaluator.evaluate(SingleAssertSetEqual(
+        column=ExprColumn(expr="x"), set_values=("a", "b", "c"),
+    ), [df])
+    assert result.passed is False
+    assert "extra" in result.message
+
+
+def test_assert_set_equal_fail_missing_and_extra():
+    df = spark.createDataFrame([("a",), ("b",), ("d",)], ["x"])
+    result = evaluator.evaluate(SingleAssertSetEqual(
+        column=ExprColumn(expr="x"), set_values=("a", "b", "c"),
+    ), [df])
+    assert result.passed is False
+    assert "missing" in result.message
+    assert "extra" in result.message
+
+
+def test_assert_set_equal_pass_with_nulls():
+    df = spark.createDataFrame([("a",), (None,)], ["x"])
+    result = evaluator.evaluate(SingleAssertSetEqual(
+        column=ExprColumn(expr="x"), set_values=("a", "null"),
+    ), [df])
+    assert result.passed is True
+
+
+def test_assert_set_equal_fail_unexpected_nulls():
+    df = spark.createDataFrame([("a",), (None,)], ["x"])
+    result = evaluator.evaluate(SingleAssertSetEqual(
+        column=ExprColumn(expr="x"), set_values=("a",),
+    ), [df])
+    assert result.passed is False
+    assert "extra" in result.message
+
+
+def test_assert_set_equal_pass_single_value():
+    df = spark.createDataFrame([("x",), ("x",)], ["x"])
+    result = evaluator.evaluate(SingleAssertSetEqual(
+        column=ExprColumn(expr="x"), set_values=("x",),
+    ), [df])
+    assert result.passed is True
+
+
+def test_assert_set_equal_pass_duplicates_in_column():
+    df = spark.createDataFrame([("a",), ("b",), ("a",), ("b",)], ["x"])
+    result = evaluator.evaluate(SingleAssertSetEqual(
+        column=ExprColumn(expr="x"), set_values=("a", "b"),
+    ), [df])
+    assert result.passed is True
+
+
+def test_assert_set_equal_fail_empty_df():
+    df = spark.createDataFrame([], schema="x: string")
+    result = evaluator.evaluate(SingleAssertSetEqual(
+        column=ExprColumn(expr="x"), set_values=("a",),
+    ), [df])
+    assert result.passed is False
+    assert "missing" in result.message
+
+
+def test_assert_set_equal_pass_has_no_failure_sample():
+    sample_eval = SparkAssertionEvaluator(sample_count=3)
+    df = spark.createDataFrame([("a",), ("b",)], ["x"])
+    result = sample_eval.evaluate(SingleAssertSetEqual(
+        column=ExprColumn(expr="x"), set_values=("a", "b"),
+    ), [df])
+    assert result.passed is True
+    assert result.failure_sample is None
+
+
+def test_assert_set_equal_failure_sample():
+    sample_eval = SparkAssertionEvaluator(sample_count=5)
+    df = spark.createDataFrame([("a",), ("b",), ("c",), ("d",)], ["x"])
+    result = sample_eval.evaluate(SingleAssertSetEqual(
+        column=ExprColumn(expr="x"), set_values=("a", "b"),
+    ), [df])
+    assert result.passed is False
+    assert result.failure_sample is not None
+    assert isinstance(result.failure_sample, list)
+    assert len(result.failure_sample) > 0

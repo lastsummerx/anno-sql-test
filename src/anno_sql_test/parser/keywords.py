@@ -25,6 +25,7 @@ from anno_sql_test.models import (
     SingleAssertEmpty,
     SingleAssertNone,
     SingleAssertNotEmpty,
+    SingleAssertSetEqual,
     SingleAssertUnique,
 )
 from anno_sql_test.parser._utils import (
@@ -86,6 +87,22 @@ class SingleAssertUniqueKeyword(AssertKeyword):
     def build(self, parse_input: ParseInput) -> Assertion:
         cols = tuple(parse_column_spec(c.strip()) for c in _smart_split(parse_input.rest, ",") if c.strip())
         return SingleAssertUnique(fields=cols)
+
+
+class SingleAssertSetEqualKeyword(AssertKeyword):
+    def build(self, parse_input: ParseInput) -> Assertion:
+        split = parse_input.rest.split(None, 1)
+        if len(split) != 2:
+            raise ParseError(f"Expected '<col> <set>' in: {parse_input.source}")
+        col_str = split[0].strip()
+        set_str = split[1].strip()
+        if set_str[0] != '(' or set_str[-1] != ')':
+            raise ParseError(f"Expected <set> surround by () but {set_str}")
+        set_str = set_str[1:-1]
+        values = {v.strip() for v in _smart_split(set_str, ',') if v.strip()}
+        if not values:
+            raise ParseError(f"Empty set in: {parse_input.source}")
+        return SingleAssertSetEqual(column=parse_column_spec(col_str), set_values=tuple(values))
 
 
 class _BaseDualAggAssertKeyword(AssertKeyword):
@@ -331,6 +348,7 @@ _KEYWORD_MAP: dict[str, AnnotationKeyword] = {
     "assert_empty": SingleAssertEmptyKeyword(),
     "assert_not_empty": SingleAssertNotEmptyKeyword(),
     "assert_unique": SingleAssertUniqueKeyword(),
+    "assert_set_equal": SingleAssertSetEqualKeyword(),
     "assert_agg_equal": DualAggAssertEqualKeyword(),
     "assert_agg_numeric_ratio_approx": DualAggAssertNumericRatioKeyword(),
     "assert_agg_numeric_delta_approx": DualAggAssertNumericDeltaKeyword(),

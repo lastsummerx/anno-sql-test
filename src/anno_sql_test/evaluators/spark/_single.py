@@ -23,6 +23,7 @@ from anno_sql_test.evaluators.spark._utils import (
     _to_literal_name,
     extract_word_fields,
     resolve_fields,
+    sample_failure_distribute,
 )
 from anno_sql_test.models import (
     Assertion,
@@ -35,6 +36,7 @@ from anno_sql_test.models import (
     SingleAssertNone,
     SingleAssertNotEmpty,
     SingleAssertPredicate,
+    SingleAssertSetEqual,
     SingleAssertUnique,
 )
 
@@ -255,6 +257,100 @@ class SingleAssertNotEmptyEvaluator(BaseSingleDataFrameEvaluator[SingleAssertNot
         if count > 0:
             return [AssertionResult(assertion=assertion, passed=True)]
         return [AssertionResult(assertion=assertion, passed=False, message="DataFrame is empty")]
+
+
+class SingleAssertSetEqualEvaluator(
+    BaseStepwiseSparkEvaluator[SingleAssertSetEqual, DataFrame, list[Column]],
+):
+    _COLUMN_SET_SIZE = "_column_set_size"
+    _TARGET_SET_SIZE = "_target_set_size"
+
+    def __init__(self, sample_count: int = 0):
+        self._sample_count = sample_count
+
+    def validate(self, assertion: SingleAssertSetEqual, dataframes: list[DataFrame]) -> list[tuple[str, Assertion]]:
+        if not dataframes:
+            self.logger.warning("No DataFrames provided for %s", type(assertion).__name__)
+            return [("No DataFrames provided", assertion)]
+        self.logger.debug("%s validated, %d DataFrame(s)", type(assertion).__name__, len(dataframes))
+        return []
+
+    def prepare(self, assertion: SingleAssertSetEqual, dataframes: list[DataFrame]) -> DataFrame:
+        column = resolve_fields([assertion.column], dataframes)[0]
+        prepared = dataframes[0].select(column).distinct()
+        if self._sample_count > 0:
+            prepared.persist(StorageLevel.DISK_ONLY)
+        return prepared
+
+    def cleanup(self, prepared: DataFrame) -> None:
+        if self._sample_count > 0:
+            prepared.unpersist()
+
+    def _build_in_set(self, assertion: SingleAssertSetEqual, prepared: DataFrame) -> Column:
+        has_null = any(x.lower() == 'null' for x in assertion.set_values)
+        non_null_ele = [x for x in assertion.set_values if x.lower() != 'null']
+        c = F.col(prepared.columns[0])
+        in_set = c.isin(*non_null_ele) | (c.isNull() & F.lit(has_null))
+        return in_set
+
+    def build(self, assertion: SingleAssertSetEqual, prepared: DataFrame) -> list[Column]:
+        in_set = self._build_in_set(assertion, prepared)
+        column_set_size = F.count(F.lit(1)).alias(self._COLUMN_SET_SIZE)
+        target_set_size = F.count(F.when(in_set, F.lit(1))).alias(self._TARGET_SET_SIZE)
+        return [column_set_size, target_set_size]
+
+    def execute(self, prepared: DataFrame, plan: list[Column]) -> Row:
+        return prepared.agg(*plan).collect()[0]
+
+    def finalize(
+        self, assertion: SingleAssertSetEqual, step_result: StepResult[DataFrame, list[Column], Row],
+    ) -> list[AssertionResult]:
+        exec_result = step_result.executed
+        total = exec_result[self._COLUMN_SET_SIZE]
+        actual = exec_result[self._TARGET_SET_SIZE]
+        expected = len(assertion.set_values)
+        if actual == expected and total == actual:
+            return [AssertionResult(assertion=assertion, passed=True)]
+
+        missing = expected - actual
+        extra = total - actual
+        parts = [f"expected {expected}, actual matching {actual}, total distinct {total}"]
+        if missing:
+            parts.append(f"missing: {missing} element(s)")
+        if extra:
+            parts.append(f"extra: {extra} element(s)")
+        return [AssertionResult(
+            assertion=assertion, passed=False,
+            message=f"Column set mismatch: {'; '.join(parts)}",
+        )]
+
+    def sample_failure(
+        self, assertion: SingleAssertSetEqual, step_result: StepResult[DataFrame, list[Column], Row],
+    ) -> list[dict] | None:
+        total = int(step_result.executed[self._COLUMN_SET_SIZE])
+        actual = int(step_result.executed[self._TARGET_SET_SIZE])
+        expected = len(assertion.set_values)
+        case_counts = {}
+        case_data = {}
+        df = step_result.prepared
+        if expected - actual > 0:
+            case_counts["missing"] = expected - actual
+            set_values = [F.lit(None if x.lower() == 'null' else x) for x in assertion.set_values]
+            # use limit 1 and explode rather than createDataFrame to avoid PicklingError as cluster python < 3.12
+            expect_df = df.limit(1).select(F.explode(F.array(*set_values)).alias(df.columns[0]))
+            case_data["missing"] = df.exceptAll(expect_df)
+        if total - actual > 0:
+            case_counts["extra"] = total - actual
+            in_set = self._build_in_set(assertion, df)
+            case_data["extra"] = df.filter(~in_set)
+        if not case_counts:
+            return None
+        result = []
+        per_case = sample_failure_distribute(case_counts, self._sample_count)
+        for k, v in per_case.items():
+            rows = case_data[k].take(v)
+            result.extend(row.asDict() for row in rows)
+        return result
 
 
 @dataclass

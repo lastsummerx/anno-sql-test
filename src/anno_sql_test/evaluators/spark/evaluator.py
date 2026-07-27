@@ -33,6 +33,7 @@ from anno_sql_test.evaluators.spark._single import (
     SingleAssertEmptyEvaluator,
     SingleAssertNoneEvaluator,
     SingleAssertNotEmptyEvaluator,
+    SingleAssertSetEqualEvaluator,
     SingleAssertUniqueEvaluator,
     SinglePredicateFusedAssertionEvaluator,
 )
@@ -54,6 +55,7 @@ from anno_sql_test.models import (
     SingleAssertEmpty,
     SingleAssertNone,
     SingleAssertNotEmpty,
+    SingleAssertSetEqual,
     SingleAssertUnique,
 )
 
@@ -68,6 +70,7 @@ class SparkAssertionEvaluator(BaseSparkEvaluator[Assertion]):
             (SingleAssertNone, SingleAssertNoneEvaluator(sample_count=sample_count)),
             (SingleAssertEmpty, SingleAssertEmptyEvaluator(sample_count=sample_count)),
             (SingleAssertNotEmpty, SingleAssertNotEmptyEvaluator()),
+            (SingleAssertSetEqual, SingleAssertSetEqualEvaluator(sample_count=sample_count)),
             (SingleAssertUnique, SingleAssertUniqueEvaluator(sample_count=sample_count)),
             (DualAggAssertEqual, DualAggAssertEqualEvaluator()),
             (DualAggAssertNumericRatioApprox, DualAggAssertNumericRatioApproxEvaluator()),

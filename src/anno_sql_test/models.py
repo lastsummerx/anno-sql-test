@@ -150,6 +150,12 @@ class SingleAssertNotEmpty(SingleAssertion):
 
 
 @dataclass
+class SingleAssertSetEqual(SingleAssertion):
+    column: ColumnSpec
+    set_values: tuple[str, ...]
+
+
+@dataclass
 class SingleAssertUnique(Assertion):
     fields: tuple[ColumnSpec, ...]
 
