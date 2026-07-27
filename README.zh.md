@@ -56,7 +56,7 @@ SELECT 1;
 SELECT id, name, status FROM ${tbl} WHERE status = 'ACTIVE';
 
 -- @test user_count
--- @assert_agg_equal count *
+-- @assert_agg_equal count columns(*)
 SELECT * FROM ${tbl};
 SELECT * FROM ${tbl} WHERE status = 'ACTIVE';
 
@@ -108,17 +108,16 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 | `@assert_empty` | — | DataFrame 必须为空 |
 | `@assert_not_empty` | — | DataFrame 必须非空 |
 | `@assert_unique` | `<field1>[, <field2>]` | 指定列组合必须唯一 |
-| `@assert_agg_equal` | `<agg> <fields>` | 多组 DataFrame 的聚合结果必须完全一致 |
-| `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields>` | 聚合结果近似相等：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
-| `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields>` | 聚合结果近似相等：`\|a - b\| <= delta` |
-| `@assert_agg_temporal_approx` | `<agg> <duration> <fields>` | 聚合结果近似相等：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
-| `@assert_join_equal` | `on <keys> values <vals>` | 按 key 连接后，值列必须完全一致 |
-| `@assert_join_numeric_ratio_approx` | `<ratio> on <keys> values <vals>` | 连接比较：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
-| `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | 连接比较：`\|a - b\| <= delta` |
-| `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | 连接比较：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
-| `@assert_rows_equal` | `[<fields>]` | 逐行计数必须完全一致（默认 fields: `columns(*)`） |
-| `@assert_rows_delta_approx` | `<delta> [<fields>]` | 逐行计数比较：`Σ\|left_cnt - right_cnt\| ≤ delta`（默认 fields: `columns(*)`） |
-| `@assert_rows_ratio_approx` | `<ratio> [<fields>]` | 逐行计数比较：`Σ\|left_cnt - right_cnt\| ≤ ratio × Σ max(left_cnt, right_cnt)`（默认 fields: `columns(*)`） |
+| `@assert_set_equal` | `<col> (<val1>, ...)` | 列的去重值必须与给定集合一致 |
+| `@assert_agg_equal` | `<agg> <fields> [group by <keys>]` | 多组 DataFrame 的聚合结果必须完全一致 |
+| `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields> [group by <keys>]` | 聚合结果近似相等：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
+| `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields> [group by <keys>]` | 聚合结果近似相等：`\|a - b\| <= delta` |
+| `@assert_agg_temporal_approx` | `<agg> <duration> <fields> [group by <keys>]` | 聚合结果近似相等：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
+| `@assert_join_equal` | `[row_delta=<n>] [row_ratio=<r>] [left\|right\|inner\|full] join on <keys> [values <vals>]` | 按 key 连接后，值列必须完全一致 |
+| `@assert_join_numeric_approx` | `[row_delta=<n>] [row_ratio=<r>] [val_ratio=<r>] [val_delta=<d>] [left\|right\|inner\|full] join on <keys> [values <vals>]` | 连接数值近似：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` 和/或 `\|a - b\| <= delta` |
+| `@assert_join_temporal_approx` | `[row_delta=<n>] [row_ratio=<r>] duration=<iso> [left\|right\|inner\|full] join on <keys> [values <vals>]` | 连接时间近似：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
+| `@assert_join_lambda` | `[row_delta=<n>] [row_ratio=<r>] (<lambda>) [left\|right\|inner\|full] join on <keys> [values <vals>]` | 使用自定义 lambda 比较器进行连接比较 |
+| `@assert_rows_equal` | `[row_delta=<n>] [row_ratio=<r>] [<fields>]` | 按字段分组后，比较各组的行数是否一致（默认 fields: `columns(*)`） |
 
 > **说明**：
 >
@@ -172,7 +171,7 @@ src/anno_sql_test/
         ├── evaluator.py  # 断言派发器（单条 & 融合）
         ├── _base.py      # Spark 求值器基础类
         ├── _single.py    # 单 DataFrame 断言（all/any/none/empty/unique + 融合）
-        ├── _multi_agg.py # 多 DataFrame 聚合断言
+        ├── _dual_agg.py  # 双 DataFrame 聚合断言
         ├── _dual_join.py # 双 DataFrame 连接断言
         └── _utils.py     # 工具函数（字段解析、类型检查器）
 ```

@@ -56,7 +56,7 @@ SELECT 1;
 SELECT id, name, status FROM ${tbl} WHERE status = 'ACTIVE';
 
 -- @test user_count
--- @assert_agg_equal count *
+-- @assert_agg_equal count columns(*)
 SELECT * FROM ${tbl};
 SELECT * FROM ${tbl} WHERE status = 'ACTIVE';
 
@@ -109,17 +109,16 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 | `@assert_empty` | — | DataFrame must be empty |
 | `@assert_not_empty` | — | DataFrame must be non-empty |
 | `@assert_unique` | `<field1>[, <field2>]` | Column combination must be unique |
-| `@assert_agg_equal` | `<agg> <fields>` | Aggregation results identical across all DataFrames |
-| `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields>` | Aggregation approx: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
-| `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields>` | Aggregation approx: `\|a - b\| <= delta` |
-| `@assert_agg_temporal_approx` | `<agg> <duration> <fields>` | Aggregation approx: `\|a - b\| <= duration_seconds` (ISO 8601) |
-| `@assert_join_equal` | `on <keys> values <vals>` | Join by keys, compare values exactly |
-| `@assert_join_numeric_ratio_approx` | `<ratio> on <keys> values <vals>` | Join compare: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
-| `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | Join compare: `\|a - b\| <= delta` |
-| `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | Join compare: `\|a - b\| <= duration_seconds` (ISO 8601) |
-| `@assert_rows_equal` | `[<fields>]` | Row-by-row comparison identical across all DataFrames (default fields: `columns(*)`) |
-| `@assert_rows_delta_approx` | `<delta> [<fields>]` | Row-by-row approx: `Σ\|a - b\| <= delta` (default fields: `columns(*)`) |
-| `@assert_rows_ratio_approx` | `<ratio> [<fields>]` | Row-by-row approx: `Σ\|a - b\| <= ratio * Σ max(\|a\|, \|b\|)` (default fields: `columns(*)`) |
+| `@assert_set_equal` | `<col> (<val1>, ...)` | Column distinct values must equal the given set |
+| `@assert_agg_equal` | `<agg> <fields> [group by <keys>]` | Aggregation results identical across all DataFrames |
+| `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields> [group by <keys>]` | Aggregation approx: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
+| `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields> [group by <keys>]` | Aggregation approx: `\|a - b\| <= delta` |
+| `@assert_agg_temporal_approx` | `<agg> <duration> <fields> [group by <keys>]` | Aggregation approx: `\|a - b\| <= duration_seconds` (ISO 8601) |
+| `@assert_join_equal` | `[row_delta=<n>] [row_ratio=<r>] [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join by keys, compare values exactly |
+| `@assert_join_numeric_approx` | `[row_delta=<n>] [row_ratio=<r>] [val_ratio=<r>] [val_delta=<d>] [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join numeric approx: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` and/or `\|a - b\| <= delta` |
+| `@assert_join_temporal_approx` | `[row_delta=<n>] [row_ratio=<r>] duration=<iso> [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join temporal approx: `\|a - b\| <= duration_seconds` (ISO 8601) |
+| `@assert_join_lambda` | `[row_delta=<n>] [row_ratio=<r>] (<lambda>) [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join with custom lambda comparator |
+| `@assert_rows_equal` | `[row_delta=<n>] [row_ratio=<r>] [<fields>]` | Group by fields, compare row counts across DataFrames (default fields: `columns(*)`) |
 
 > **Note**:
 >
@@ -173,7 +172,7 @@ src/anno_sql_test/
         ├── evaluator.py  # Assertion dispatcher (single & fused)
         ├── _base.py      # Spark-specific evaluator base classes
         ├── _single.py    # Single-DataFrame assertions (all/any/none/empty/unique + fused)
-        ├── _multi_agg.py # Multi-DataFrame aggregation assertions
+        ├── _dual_agg.py  # Dual-DataFrame aggregation assertions
         ├── _dual_join.py # Dual-DataFrame join assertions
         └── _utils.py     # Utility functions (field resolution, type checkers)
 ```
