@@ -7,7 +7,7 @@ from anno_sql_test.parser import parse_suite
 from anno_sql_test.reporter import ConsoleReporter
 from anno_sql_test.runner import SparkRunner
 
-spark = (SparkSession.builder.master("local[1]")
+spark = (SparkSession.builder.master("local[1]")  # ty: ignore[unresolved-attribute]
     .appName("test")
     .config("spark.ui.enabled", "false")
     .config("spark.sql.shuffle.partitions", "2")

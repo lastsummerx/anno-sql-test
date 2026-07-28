@@ -11,6 +11,7 @@ license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "pyspark>=3.0.0",
+    "ty>=0.0.64",
 ]
 
 [project.optional-dependencies]
@@ -20,9 +21,9 @@ excel = [
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3.5",
-    "ruff>=0.15.14",
-    "ty>=0.0.40",
+    "pytest>=9.1.1",
+    "ruff>=0.16.0",
+    "ty>=0.0.64",
 ]
 
 [project.scripts]

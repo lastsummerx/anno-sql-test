@@ -112,12 +112,12 @@ def main(args=None):
         config = SparkConfig.from_args(parsed)
         builder = SparkSession.builder
         if config.master:
-            builder = builder.master(config.master)
+            builder = builder.master(config.master)  # ty: ignore[unresolved-attribute]
 
         for k, v in config.conf:
-            builder = builder.config(k, v)
+            builder = builder.config(k, v)  # ty: ignore[unresolved-attribute]
 
-        spark = builder.getOrCreate()
+        spark = builder.getOrCreate()  # ty: ignore[unresolved-attribute]
         runner = SparkRunner(spark, sample_count=config.sample_count)
     else:
         logging.error("Backend '%s' is not yet implemented", parsed.backend)
