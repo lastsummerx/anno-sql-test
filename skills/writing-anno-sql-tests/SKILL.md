@@ -5,9 +5,8 @@ description: Use when writing SQL unit test cases for data processing logic usin
 
 # Writing Test Cases for anno-sql-test
 
-## Overview
-
-anno-sql-test is a PySpark-based SQL unit testing framework. Users define test cases as SQL comment annotations (e.g. `-- @assert_all`) directly in `.sql` files. Your job: analyze data processing logic and produce correctly annotated `.sql` files with the right assertions.
+anno‑sql‑test is a PySpark SQL unit test framework driven by SQL comment annotations (`-- @assert_*`).
+Your entire response **must** be the final `.sql` file with annotations — no explanations, no summaries, no markdown tables.
 
 ## When to Use
 
@@ -15,96 +14,43 @@ anno-sql-test is a PySpark-based SQL unit testing framework. Users define test c
 - User provides SQL logic (filtering, aggregation, joins, CTEs) and expects annotation-based test coverage
 - User says "write test cases for this SQL" referencing anno-sql-test
 
-**Do NOT use** for: Python unit tests (use pytest), testing Spark DataFrames directly, or writing tests outside the annotation-based `.sql` file format.
+## Core Principles (apply in every answer)
 
-## Critical Rule: DO NOT Copy Transformation Logic
+1. **Minimise SQL statements** – Put predicate checks into assertions, **not** extra `WHERE` clauses or separate queries.  
+   ❌ `SELECT * FROM t WHERE amount > 0` (extra query just to check)  
+   ✅ `-- @assert_all amount > 0` on the actual query  
 
-**Never** replicate the production SQL's calculation logic inside test expectations. Doing so makes tests tautological — they only verify that the code is self‑consistent, not that it produces the correct result. If the logic is wrong, the test will pass because it uses the same wrong logic.
+2. **Universal integrity checks** – For *every* table/query, start with:
+   ```sql
+   -- @assert_any columns(*) is not null         -- at least one non-null column per row
+   -- @assert_any columns(numeric:*) != 0         -- at least one non-zero numeric column
+   ```
+   Then layer on business‑specific assertions.
 
-**Correct approach:** Use independent test data with known expected outcomes, and validate via:
-- Data quality predicates (`@assert_all`, `@assert_none`) that check business rules
-- Aggregation or row‑level comparisons against a separate trusted source or a manually crafted baseline
-- Approximate tolerances for floating‑point or temporal drift
+3. **Never copy production logic into assertions** – Tests must verify independent business invariants (e.g. `amount >= 0`, not the `WHERE amount > 100` filter itself). Duplicating the logic makes the test tautological.
 
-**Example of what NOT to do:**
-```sql
--- WRONG: replicates the production WHERE clause in an assertion
--- @assert_all amount > 100   -- production uses WHERE amount > 100
-SELECT * FROM processed WHERE amount > 100;
-```
-This test passes even if the condition should be `>= 100` — it just checks that the output matches the same condition.
-
-**Correct example:**
-```sql
--- GOOD: validates business rule independently
--- @assert_all amount >= 0    -- amounts should never be negative
--- @assert_not_empty
-SELECT * FROM processed WHERE amount > 100;
-```
-The assertion `amount >= 0` is a business invariant, not a copy of the WHERE clause.
-
-## Golden Rule
-
-**You MUST return the complete `.sql` file content with annotations — NO summaries, NO explanations, NO markdown tables, NO descriptions of what you would write.** Any output that is not a valid annotated `.sql` file is wrong. The user needs the file, not a discussion about it.
-
-## Core Pattern: Analyze → Select → Write
-
-```
-For each SQL transformation in the file:
-  1. Analyze intent: What business rule does this query implement?
-  2. Identify risks: What could go wrong? (wrong filter, aggregation errors, data quality issues)
-  3. Select assertion type(s) based on transformation shape:
-     - Single query output → single-DataFrame assertions
-     - Multiple queries compared → multi-agg or dual-join assertions
-  4. Write annotation block: annotate the SQL with appropriate assertions
-```
-
-### Assertion Selection Decision
-
-```
-Transformation has 1 SQL statement?
-  → Single-DataFrame assertions
-     - Validate data quality:  @assert_all <predicate>, @assert_none <predicate>
-     - Validate presence/absence: @assert_not_empty, @assert_empty
-     - Validate uniqueness: @assert_unique <cols>
-     - Validate "at least one": @assert_any <predicate>
-
-Transformation has 2+ SQL statements, comparing aggregate values?
-  → Multi-DataFrame Aggregation assertions
-     - Same aggregation across DFs: @assert_agg_equal <agg> <fields>
-     - Approx numeric comparison: @assert_agg_numeric_ratio_approx <agg> <ratio> <fields>
-     - Approx numeric delta: @assert_agg_numeric_delta_approx <agg> <delta> <fields>
-     - Approx temporal delta: @assert_agg_temporal_approx <agg> <duration> <fields>
-
-Transformation has exactly 2 SQL statements, comparing row-level values by key?
-  → Dual-DataFrame Join assertions
-     - Exact match: @assert_join_equal on <keys> values <vals>
-     - Approx ratio: @assert_join_numeric_ratio_approx <ratio> on <keys> values <vals>
-     - Approx delta: @assert_join_numeric_delta_approx <delta> on <keys> values <vals>
-     - Approx temporal: @assert_join_temporal_approx <duration> on <keys> values <vals>
-```
+4. **Return ONLY the annotated `.sql` file** – No preamble, no markdown tables, no “Here is the file”. If you are about to write anything else, stop and output the file instead.
 
 ## Quick Reference (All Assertions)
 
 | Annotation | Arguments | Description |
 | --- | --- | --- |
-| `@assert_all` | `<predicate>` | All rows must satisfy predicate |
-| `@assert_any` | `<predicate>` | At least one row must satisfy predicate |
-| `@assert_none` | `<predicate>` | No row must satisfy predicate |
+| `@assert_all` | `<predicate>` | All rows must satisfy the predicate |
+| `@assert_any` | `<predicate>` | At least one row must satisfy the predicate |
+| `@assert_none` | `<predicate>` | No row must satisfy the predicate |
 | `@assert_empty` | — | DataFrame must be empty |
 | `@assert_not_empty` | — | DataFrame must be non-empty |
-| `@assert_unique` | `<field>[,<field>]` | Column combination must be unique |
-| `@assert_agg_equal` | `<agg> <fields>` | Aggregation identical across all DataFrames |
-| `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields>` | `\|a-b\| ≤ ratio * max(\|a\|,\|b\|)` |
-| `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields>` | `\|a-b\| ≤ delta` |
-| `@assert_agg_temporal_approx` | `<agg> <duration> <fields>` | `\|a-b\| ≤ duration_seconds` (ISO 8601) |
-| `@assert_join_equal` | `on <keys> values <vals>` | Join by keys, compare values exactly |
-| `@assert_join_numeric_ratio_approx` | `<ratio> on <keys> values <vals>` | Join compare: `\|a-b\| ≤ ratio * max(...)` |
-| `@assert_join_numeric_delta_approx` | `<delta> on <keys> values <vals>` | Join compare: `\|a-b\| ≤ delta` |
-| `@assert_join_temporal_approx` | `<duration> on <keys> values <vals>` | Join compare: `\|a-b\| ≤ duration_seconds` |
-| `@assert_rows_equal` | `[<fields>]` | Row‑by‑row comparison (default: all common cols) |
-| `@assert_rows_delta_approx` | `<delta> [<fields>]` | Row‑by‑row `Σ\|a-b\| ≤ delta` |
-| `@assert_rows_ratio_approx` | `<ratio> [<fields>]` | Row‑by‑row `Σ\|a-b\| ≤ ratio * Σ max(...)` |
+| `@assert_unique` | `<field1>[, <field2>]` | Column combination must be unique |
+| `@assert_set_equal` | `<col> (<val1>, ...)` | Column distinct values must equal the given set |
+| `@assert_agg_equal` | `<agg> <fields> [group by <keys>]` | Aggregation results identical across all DataFrames |
+| `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields> [group by <keys>]` | Aggregation approx: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
+| `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields> [group by <keys>]` | Aggregation approx: `\|a - b\| <= delta` |
+| `@assert_agg_temporal_approx` | `<agg> <duration> <fields> [group by <keys>]` | Aggregation approx: `\|a - b\| <= duration_seconds` (ISO 8601) |
+| `@assert_join_equal` | `[row_delta=<n>] [row_ratio=<r>] [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join by keys, compare values exactly |
+| `@assert_join_numeric_approx` | `[row_delta=<n>] [row_ratio=<r>] [val_ratio=<r>] [val_delta=<d>] [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join numeric approx: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` and/or `\|a - b\| <= delta` |
+| `@assert_join_temporal_approx` | `[row_delta=<n>] [row_ratio=<r>] duration=<iso> [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join temporal approx: `\|a - b\| <= duration_seconds` (ISO 8601) |
+| `@assert_join_lambda` | `[row_delta=<n>] [row_ratio=<r>] (<lambda>) [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join with custom lambda comparator |
+| `@assert_rows_equal` | `[row_delta=<n>] [row_ratio=<r>] [<fields>]` | Group by fields, compare row counts across DataFrames (default fields: `columns(*)`) |
 
 ### Other Keywords
 
@@ -124,142 +70,43 @@ Transformation has exactly 2 SQL statements, comparing row-level values by key?
 - In predicates: `numeric:columns(*) is not null`, `columns(*_cnt) > 0`
 - EXCEPT clause: `columns(* except (col1, col2))` or `columns(* except col1, col2)`
 
-### Duration format
 
-ISO 8601: `P1DT12H` = 1 day 12 hours = 129600 seconds.
-
-## Implementation — Writing Test Annotations
-
-### Step 1: Identify test purpose
-
-Ask: "What business logic does this SQL encode?" Then choose assertions that validate business invariants — never copy the exact computation logic.
-
-| SQL Purpose | Primary Risk | Suggested Assertions |
-|---|---|---|
-| Filtering (WHERE) | Wrong rows included/excluded | `@assert_all <non‑trivial_rule>` (e.g., `amount >= 0`), `@assert_none <invalid_condition>` |
-| Aggregation (GROUP BY) | Wrong aggregation, NULL handling | `@assert_not_empty`, `@assert_unique <group_key>`, `@assert_all <aggregate_range>` |
-| Data quality check | Edge cases not caught | `@assert_not_empty`, `@assert_all <quality_check>` |
-| Comparing two periods | Data drift, ETL error | `@assert_join_*` or `@assert_agg_*` with explained threshold |
-| Uniqueness constraint | Duplicates | `@assert_unique <key_cols>` |
-
-### Step 2: Choose assertion type(s)
-
-Use the decision tree from Core Pattern above.
-
-### Step 3: Write annotations
+## example
 
 ```sql
--- @test my_test_name
--- @assert_all amount > 0          -- business rule, NOT copied from WHERE clause
--- @assert_not_empty
--- @assert_unique order_id
-SELECT * FROM processed_orders;
-```
-
-For multi‑query comparison:
-```sql
--- @test period_comparison
--- @assert_agg_numeric_equal sum amount
-SELECT amount FROM orders_h1;
-SELECT amount FROM orders_h2;
-```
-
-For dual‑join comparison:
-```sql
--- @test user_comparison
--- @assert_join_numeric_ratio_approx 0.01 on user_name values total_amount
-SELECT user_name, SUM(amount) total_amount FROM orders_2024 GROUP BY user_name;
-SELECT user_name, SUM(amount) total_amount FROM orders_2025 GROUP BY user_name;
-```
-
-### Step 4: Return ONLY the annotated `.sql` file
-
-Your entire response must be the annotated `.sql` file content. No introductions, no explanations, no markdown tables, no summaries.
-
-**Red flags — these mean STOP and output the file instead:**
-- Any text outside a ```sql block (unless it's the file itself)
-- "Here's what I changed", "I added assertions for...", a summary table, "Let me explain my reasoning", a preamble like "Here is the annotated file:"
-- "The file already has..." — just output the file.
-
-## Business Rule Patterns (Apply Proactively)
-
-These tests verify invariants independent of how the data was computed. Do **not** derive them from the transformation logic — they come from domain knowledge.
-
-1. **Row integrity** – every row should have at least one non‑null value:
-```sql
--- @assert_any columns(*) is not null
-```
-
-2. **Upstream/downstream consistency** – totals must match across layers:
-```sql
--- @assert_agg_equal count *
--- @assert_agg_equal sum amount
-```
-
-3. **No negative/impossible values** – metrics should be in valid ranges:
-```sql
--- @assert_all amount >= 0
--- @assert_all amount is not null
-```
-
-4. **Date consistency** – start ≤ end, no future dates, etc.:
-```sql
--- @assert_all start_date <= end_date
-```
-
-5. **Completeness** – every business key exists after a join:
-```sql
--- @assert_not_empty
--- @assert_unique user_id
-```
-
-6. **Referential integrity** – fact keys exist in dimensions:
-```sql
--- @assert_none key is null
-```
-
-Apply the rule of thumb: for every table/query, check row integrity, completeness, range, and upstream match. Do **not** copy the ETL logic to create “expected” results — that defeats the purpose of testing.
-
-## Common Mistakes to Avoid
-
-1. **Summarizing instead of producing the annotated file.** Return the complete file, nothing else.
-2. **Copying the transformation logic into assertions.** This makes the test tautological — always use independent business rules or compare against a trusted baseline.
-3. **Choosing the wrong assertion type.** Single‑query output → single‑DF assertions; multiple queries comparing aggregates → `@assert_agg_*`; two queries comparing row‑level by key → `@assert_join_*`.
-4. **Using arbitrary threshold values.** Derive tolerances from business requirements (e.g., 1% for floating‑point drift).
-5. **Forgetting the `@test` delimiter.** Every set of assertions must be preceded by `-- @test <name>`.
-6. **Ignoring edge cases.** Consider NULLs, empty datasets, duplicates, type mismatches.
-
-## Complete Example
-
-```sql
--- @var src_db=source_db
+-- @var dt='2026-07-27'
 -- @var tgt_db=target_db
 
-
--- Row integrity: no all-null rows from source
--- @test source_row_integrity
+-- @test test_order
 -- @assert_any columns(*) is not null
--- @assert_any numeric:columns(*) != 0
-SELECT * FROM ${tgt_db}.orders;
-
--- Filtered results: use a business rule, not the filter condition
--- @test completed_orders
+-- @assert_any columns(numeric:*) != 0
 -- @assert_not_empty
 -- @assert_unique order_id
-SELECT * FROM ${tgt_db}.orders WHERE status = 'completed';
+SELECT * FROM ${tgt_db}.orders;
 
--- Aggregation: totals should be non‑negative, and each user appears once
--- @test user_totals
--- @assert_not_empty
--- @assert_unique user_name
--- @assert_all total_amount >= 0
-SELECT user_name, SUM(amount) total_amount
-FROM ${tgt_db}.orders
-GROUP BY user_name;
-
--- Upstream/downstream: total amount must be preserved
--- @test tgt_vs_amount_sum
+-- @test test_consistency
 -- @assert_agg_equal sum amount
-SELECT * FROM ${src_db}.orders;
+SELECT * FROM ods.orders;
 SELECT * FROM ${tgt_db}.orders;
 ```
+
+Multi‑statement tests: separate queries with `;` or a blank line (framework‑dependent).  
+Always start with `@test`, never leave a test block without a name.
+
+## Patterns to prefer
+
+- **Row integrity** → `@assert_any columns(*) is not null` + `@assert_any columns(numeric:*) != 0`  
+- **Range / sign** → `@assert_all amount >= 0`  
+- **Uniqueness** → `@assert_unique user_id`  
+- **Up‑/down‑stream consistency** → `@assert_agg_equal count *` / `@assert_agg_equal sum amount`  
+- **No orphans** → `@assert_none key is null`  
+
+Remember: these are **independent** business rules, not copies of the query’s `WHERE`/`HAVING`.
+
+## What NOT to do
+
+- Add extra `SELECT … WHERE …` statements solely to test a condition. Use assertions.
+- Output text like “Here is the annotated file” or “I added the following tests”.
+- Use `@assert_all` with the exact filter from the production query.
+- Forget the universal integrity checks.
+- Return anything other than the final `.sql` content.
