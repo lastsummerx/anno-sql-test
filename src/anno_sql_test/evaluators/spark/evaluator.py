@@ -72,10 +72,10 @@ class SparkAssertionEvaluator(BaseSparkEvaluator[Assertion]):
             (SingleAssertNotEmpty, SingleAssertNotEmptyEvaluator()),
             (SingleAssertSetEqual, SingleAssertSetEqualEvaluator(sample_count=sample_count)),
             (SingleAssertUnique, SingleAssertUniqueEvaluator(sample_count=sample_count)),
-            (DualAggAssertEqual, DualAggAssertEqualEvaluator()),
-            (DualAggAssertNumericRatioApprox, DualAggAssertNumericRatioApproxEvaluator()),
-            (DualAggAssertNumericDeltaApprox, DualAggAssertNumericDeltaApproxEvaluator()),
-            (DualAggAssertTemporalApprox, DualAggAssertTemporalApproxEvaluator()),
+            (DualAggAssertEqual, DualAggAssertEqualEvaluator(sample_count=sample_count)),
+            (DualAggAssertNumericRatioApprox, DualAggAssertNumericRatioApproxEvaluator(sample_count=sample_count)),
+            (DualAggAssertNumericDeltaApprox, DualAggAssertNumericDeltaApproxEvaluator(sample_count=sample_count)),
+            (DualAggAssertTemporalApprox, DualAggAssertTemporalApproxEvaluator(sample_count=sample_count)),
             (DualJoinAssertEqual, DualJoinAssertEqualEvaluator(sample_count=sample_count)),
             (DualJoinAssertNumericApprox, DualJoinAssertNumericApproxEvaluator(sample_count=sample_count)),
             (DualJoinAssertTemporalApprox, DualJoinAssertTemporalApproxEvaluator(sample_count=sample_count)),
@@ -102,7 +102,7 @@ class SparkFusedAssertionEvaluator(BaseSparkFusedEvaluator[Assertion]):
         self._handlers: dict[type[Assertion], BaseFusedAssertionEvaluator] = {}
         evaluators: list[DelegatingStepwiseSparkFusedEvaluator] = [
             SinglePredicateFusedAssertionEvaluator(sample_count=sample_count),
-            DualAggFusedAssertionEvaluator(),
+            DualAggFusedAssertionEvaluator(sample_count=sample_count),
             DualJoinFusedAssertionEvaluator(sample_count=sample_count),
         ]
         for evaluator in evaluators:

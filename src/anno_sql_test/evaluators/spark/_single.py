@@ -338,7 +338,7 @@ class SingleAssertSetEqualEvaluator(
             set_values = [F.lit(None if x.lower() == 'null' else x) for x in assertion.set_values]
             # use limit 1 and explode rather than createDataFrame to avoid PicklingError as cluster python < 3.12
             expect_df = df.limit(1).select(F.explode(F.array(*set_values)).alias(df.columns[0]))
-            case_data["missing"] = df.exceptAll(expect_df)
+            case_data["missing"] = expect_df.exceptAll(df)
         if total - actual > 0:
             case_counts["extra"] = total - actual
             in_set = self._build_in_set(assertion, df)

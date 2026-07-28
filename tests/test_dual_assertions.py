@@ -607,18 +607,3 @@ def test_dual_join_no_violations_no_failure_sample():
     )
     assert result.passed is True
     assert result.failure_sample is None
-
-
-def test_multi_agg_no_failure_sample():
-    sample_eval = SparkAssertionEvaluator(sample_count=3)
-    df1 = spark.createDataFrame([(100,), (200,)], ["amt"])
-    df2 = spark.createDataFrame([(100,), (100,)], ["amt"])
-    result = sample_eval.evaluate(
-        DualAggAssertEqual(
-            agg=LambdaFunc(param_names=("col",), template="sum({col})"),
-            fields=(ExprColumn(expr="amt"),),
-        ),
-        [df1, df2],
-    )
-    assert result.passed is False
-    assert result.failure_sample is None

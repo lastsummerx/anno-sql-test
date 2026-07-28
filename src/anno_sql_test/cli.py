@@ -66,7 +66,7 @@ def create_parser():
     parent_parser.add_argument("-v", "--verbose", action="count", default=0,
                               help="Increase verbosity (-v: INFO, -vv: DEBUG)")
     parent_parser.add_argument("path", help="SQL file or directory containing .sql files")
-    parent_parser.add_argument("--sample-count", type=int, default=5,
+    parent_parser.add_argument("--sample-count", type=int, default=15,
                               help="Number of violating rows to sample (0=disabled)")
 
     parser = argparse.ArgumentParser(prog="anno-sql-test", description="PySpark SQL unit testing framework")
