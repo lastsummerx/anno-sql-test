@@ -1,7 +1,7 @@
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import ClassVar, Self
+from typing import ClassVar
 
 from anno_sql_test.errors import ParseError
 from anno_sql_test.models import (
@@ -183,38 +183,53 @@ class _RowParam:
     row_ratio: float = 0.0
     row_delta: int = 0
 
-    row_ratio_match: re.Match | None = None
-    row_delta_match: re.Match | None = None
 
-    ROW_RATIO_REGEX: ClassVar[re.Pattern[str]] = re.compile(r'\brow_ratio=(\S+)\s*')
-    ROW_DELTA_REGEX: ClassVar[re.Pattern[str]] = re.compile(r'\brow_delta=(\S+)\s*')
+def _extract_row_params(s: str, source: str) -> tuple[_RowParam, str]:
+    s = s.strip()
+    tokens = _smart_split(s, r'\s+')
+    row_ratio = 0.0
+    row_delta = 0
+    rest_tokens: list[str] = []
+    in_kv_block = True
 
-    @classmethod
-    def from_str(cls, s: str, source: str) -> Self:
-        row_ratio_match = re.search(cls.ROW_RATIO_REGEX, s)
-        row_delta_match = re.search(cls.ROW_DELTA_REGEX, s)
-        row_ratio = _parse_float(row_ratio_match.group(1), "row_ratio", source) if row_ratio_match else 0.0
-        row_delta = _parse_int(row_delta_match.group(1), "row_delta", source) if row_delta_match else 0
+    for token in tokens:
+        m = re.fullmatch(r'\w+=\S+', token)
+        if in_kv_block and m:
+            key, value = m.group(0).split('=', 1)
+            if key == 'row_ratio':
+                row_ratio = _parse_float(value, 'row_ratio', source)
+            elif key == 'row_delta':
+                row_delta = _parse_int(value, 'row_delta', source)
+            else:
+                rest_tokens.append(token)
+        else:
+            in_kv_block = False
+            if re.match(r'row_ratio=|row_delta=', token):
+                raise ParseError(
+                    f"row_ratio= and row_delta= must appear in the leading "
+                    f"key=value block, but got '{token}' after other content "
+                    f"in: {source}",
+                )
+            rest_tokens.append(token)
 
-        if row_ratio > 0 and row_delta > 0:
-            raise ParseError(f"Cannot specify both row_ratio and row_delta in: {source}")
+    if row_ratio > 0 and row_delta > 0:
+        raise ParseError(f"Cannot specify both row_ratio and row_delta in: {source}")
 
-        if row_delta < 0:
-            raise ParseError(f"row_delta must be non-negative in: {source}")
+    if row_delta < 0:
+        raise ParseError(f"row_delta must be non-negative in: {source}")
 
-        if row_ratio < 0 or row_ratio > 1:
-            raise ParseError(f"row_ratio must be between 0 and 1 in: {source}")
+    if row_ratio < 0 or row_ratio > 1:
+        raise ParseError(f"row_ratio must be between 0 and 1 in: {source}")
 
-        return cls(
-            row_ratio=row_ratio, row_delta=row_delta,
-            row_ratio_match=row_ratio_match, row_delta_match=row_delta_match,
-        )
+    rest = ' '.join(rest_tokens)
+    return _RowParam(row_ratio=row_ratio, row_delta=row_delta), rest
 
 
 class _BaseDualJoinAssertKeyword(AssertKeyword):
-    JOIN_REGEX = re.compile(r'\b(?:(\w{4,5})?\s+join)?$', re.IGNORECASE)
+    JOIN_REGEX = re.compile(r'\b(?:(\w+)?\s+join)?$', re.IGNORECASE)
     ON_REGEX = re.compile(r'\bon\b', re.IGNORECASE)
     VALUES_REGEX = re.compile(r'\bvalues\b', re.IGNORECASE)
+    SUPPORT_JOIN_TYPES = frozenset(["left", "right", "inner", "full"])
 
     @classmethod
     def _parse_dual_join_assert(cls, rest: str, source: str) -> tuple[DualJoinAssertion, str]:
@@ -233,9 +248,11 @@ class _BaseDualJoinAssertKeyword(AssertKeyword):
             values = _parse_fields(after_on[values_match.end():], "values")
         join_match = re.search(cls.JOIN_REGEX, before_on)
         join_type = join_match.group(1).lower() if join_match and join_match.group(1) else "full"
+        if join_type not in cls.SUPPORT_JOIN_TYPES:
+            raise ValueError(f"Unsuported join type {join_type} in: {rest}")
         before_join = before_on[:join_match.start()].strip() if join_match else before_on.strip()
 
-        row_param = _RowParam.from_str(before_join, source)
+        row_param, before_join = _extract_row_params(before_join, source)
 
         base_assertion = DualJoinAssertion(
             keys=keys,
@@ -261,7 +278,6 @@ class DualJoinAssertNumericApproxKeyword(_BaseDualJoinAssertKeyword):
         p, before_join = self._parse_dual_join_assert(parse_input.rest, parse_input.source)
         val_ratio_match = re.search(self.VAL_RATIO_REGEX, before_join)
         val_delta_match = re.search(self.VAL_DELTA_REGEX, before_join)
-        print(before_join, val_delta_match)
         val_ratio = _parse_float(val_ratio_match.group(1), "val_ratio", before_join) if val_ratio_match else 0.0
         val_delta = _parse_float(val_delta_match.group(1), "val_delta", before_join) if val_delta_match else 0.0
         return DualJoinAssertNumericApprox(val_ratio=val_ratio, val_delta=val_delta, **p.__dict__)
@@ -297,13 +313,9 @@ class _BaseDualRowsAssertKeyword(AssertKeyword):
         rest = rest.strip()
         if not rest:
             return DualRowsAssertion(fields=(GlobTemplateColumn(glob="*"),))
-        row_param = _RowParam.from_str(rest, rest)
-
-        start = row_param.row_ratio_match.end() if row_param.row_ratio_match else 0
-        start = max(start, row_param.row_delta_match.end() if row_param.row_delta_match else 0)
-        after_param = rest[start:]
+        row_param, rest = _extract_row_params(rest, rest)
         return DualRowsAssertion(
-            fields=_parse_fields(after_param),
+            fields=_parse_fields(rest),
             row_ratio=row_param.row_ratio, row_delta=row_param.row_delta,
         )
 

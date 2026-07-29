@@ -3,7 +3,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from pyspark.sql import Column, DataFrame
+from pyspark.sql import Column, DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
     DataType,
@@ -168,3 +168,10 @@ def sample_failure_distribute(
             rst[case] = remain
             break
     return rst
+
+
+def get_active_session() -> SparkSession:
+    spark = SparkSession.getActiveSession()
+    if spark is None:
+        raise RuntimeError("no active spark session, please call getOrCreate first")
+    return spark
