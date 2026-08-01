@@ -97,6 +97,8 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 
 ## Annotation Reference
 
+> **DataFrame model**: a test case may contain one or more SQL statements. Each statement produces a result DataFrame (`df0`, `df1`, … in statement order). Single-DataFrame assertions (`@assert_all`, `@assert_any`, `@assert_none`, `@assert_empty`, `@assert_not_empty`, `@assert_unique`, `@assert_set_equal`) inspect **`df0`** (the first statement's result). Dual-DataFrame assertions (`@assert_agg_*`, `@assert_join_*`, `@assert_rows_equal`) compare **`df0` and `df1`**, so the test must contain exactly two SQL statements. See [How Assertions Work](#how-assertions-work-equivalent-sql) for the equivalent SQL of each assertion.
+
 | Annotation | Arguments | Description |
 | --- | --- | --- |
 | `@test` | `<name>` | Start a test case |
@@ -110,15 +112,15 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 | `@assert_not_empty` | — | DataFrame must be non-empty |
 | `@assert_unique` | `<field1>[, <field2>]` | Column combination must be unique |
 | `@assert_set_equal` | `<col> (<val1>, ...)` | Column distinct values must equal the given set |
-| `@assert_agg_equal` | `<agg> <fields> [group by <keys>]` | Aggregation results identical across all DataFrames |
-| `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields> [group by <keys>]` | Aggregation approx: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
-| `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields> [group by <keys>]` | Aggregation approx: `\|a - b\| <= delta` |
-| `@assert_agg_temporal_approx` | `<agg> <duration> <fields> [group by <keys>]` | Aggregation approx: `\|a - b\| <= duration_seconds` (ISO 8601) |
+| `@assert_agg_equal` | `<agg> <fields> [group by <keys>]` | df0 vs df1: grouped aggregation results must be identical |
+| `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields> [group by <keys>]` | df0 vs df1 aggregation approx: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
+| `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields> [group by <keys>]` | df0 vs df1 aggregation approx: `\|a - b\| <= delta` |
+| `@assert_agg_temporal_approx` | `<agg> <duration> <fields> [group by <keys>]` | df0 vs df1 aggregation approx: `\|a - b\| <= duration_seconds` (ISO 8601) |
 | `@assert_join_equal` | `[row_delta=<n>] [row_ratio=<r>] [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join by keys, compare values exactly |
 | `@assert_join_numeric_approx` | `[row_delta=<n>] [row_ratio=<r>] [val_ratio=<r>] [val_delta=<d>] [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join numeric approx: `\|a - b\| <= ratio * max(\|a\|, \|b\|)` and/or `\|a - b\| <= delta` |
 | `@assert_join_temporal_approx` | `[row_delta=<n>] [row_ratio=<r>] duration=<iso> [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join temporal approx: `\|a - b\| <= duration_seconds` (ISO 8601) |
 | `@assert_join_lambda` | `[row_delta=<n>] [row_ratio=<r>] (<lambda>) [left\|right\|inner\|full] join on <keys> [values <vals>]` | Join with custom lambda comparator |
-| `@assert_rows_equal` | `[row_delta=<n>] [row_ratio=<r>] [<fields>]` | Group by fields, compare row counts across DataFrames (default fields: `columns(*)`) |
+| `@assert_rows_equal` | `[row_delta=<n>] [row_ratio=<r>] [<fields>]` | Group by fields, compare row counts between df0 and df1 (default fields: `columns(*)`) |
 
 > **Note**:
 >
@@ -145,6 +147,92 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 > - Use `${var_name}` syntax for substitution in SQL: `SELECT * FROM ${tbl}`.
 > - Override variables via CLI: `anno-sql-test spark --var db=staging ./sql_tests/` (can be repeated).
 > - CLI variables take precedence over file-level variables.
+
+### How Assertions Work (Equivalent SQL)
+
+Below, `df0` / `df1` stand for the result DataFrames of a test's SQL statements, in statement order. Single-DataFrame assertions inspect `df0`; dual-DataFrame assertions compare `df0` and `df1`. A test passes only when **every** assertion passes.
+
+#### Predicate & Cardinality Checks (`df0`)
+
+| Assertion | Meaning | Passes when |
+| --- | --- | --- |
+| `@assert_all <pred>` | every row satisfies `<pred>` | `SELECT * FROM df0 WHERE NOT (<pred>)` returns 0 rows |
+| `@assert_any <pred>` | at least one row satisfies `<pred>` | `SELECT * FROM df0 WHERE <pred>` returns ≥ 1 row |
+| `@assert_none <pred>` | no row satisfies `<pred>` | `SELECT * FROM df0 WHERE <pred>` returns 0 rows |
+| `@assert_empty` | `df0` has no rows | `SELECT * FROM df0 LIMIT 1` returns 0 rows |
+| `@assert_not_empty` | `df0` has at least one row | `SELECT * FROM df0 LIMIT 1` returns 1 row |
+
+#### Uniqueness & Set Checks (`df0`)
+
+| Assertion | Meaning | Passes when |
+| --- | --- | --- |
+| `@assert_unique f1, f2` | every `(f1, f2)` combination occurs at most once | `SELECT f1, f2, count(*) c FROM df0 GROUP BY f1, f2 HAVING c > 1` returns 0 rows |
+| `@assert_set_equal col (v1, v2)` | the distinct values of `col` are exactly `{v1, v2}` | `SELECT DISTINCT col FROM df0` misses no set value and contains no value outside the set |
+
+#### Aggregation Comparison (`df0` vs `df1`)
+
+`@assert_agg_*` first aggregates both DataFrames with the same key(s) and aggregate expression(s):
+
+```sql
+a = SELECT <keys>, <agg>(<fields>) AS agg_val FROM df0 GROUP BY <keys>
+b = SELECT <keys>, <agg>(<fields>) AS agg_val FROM df1 GROUP BY <keys>
+```
+
+then `FULL OUTER JOIN`s them on the keys. `@assert_agg_equal` passes when the following query returns 0 rows:
+
+```sql
+SELECT *
+FROM a FULL OUTER JOIN b USING (<keys>)
+WHERE a.agg_val IS DISTINCT FROM b.agg_val   -- value mismatch
+   OR a.<key> IS NULL OR b.<key> IS NULL;    -- key present on only one side
+```
+
+The approximate flavors keep the same shape but replace the value condition with the violation test below:
+
+| Assertion | Value condition (a row is a violation when true) |
+| --- | --- |
+| `@assert_agg_numeric_ratio_approx <agg> <ratio> …` | `abs(a.agg_val - b.agg_val) > <ratio> * greatest(abs(a.agg_val), abs(b.agg_val))` |
+| `@assert_agg_numeric_delta_approx <agg> <delta> …` | `abs(a.agg_val - b.agg_val) > <delta>` |
+| `@assert_agg_temporal_approx <agg> <duration> …` | `abs(a.agg_val - b.agg_val) > <duration_seconds>` |
+
+#### Join Comparison (`df0` vs `df1`)
+
+`@assert_join_*` joins the two DataFrames directly on the keys — no aggregation. `@assert_join_equal` passes when the following query returns 0 rows:
+
+```sql
+SELECT *
+FROM df0 l FULL OUTER JOIN df1 r ON l.<key> = r.<key>  -- default full; or left / right / inner
+WHERE l.<val> IS DISTINCT FROM r.<val>                 -- value mismatch
+   OR l.<key> IS NULL OR r.<key> IS NULL;              -- key present on only one side
+```
+
+| Assertion | Value condition (a row is a violation when true) |
+| --- | --- |
+| `@assert_join_numeric_approx … val_ratio=<r> …` | `abs(l.val - r.val) > <r> * greatest(abs(l.val), abs(r.val))` |
+| `@assert_join_numeric_approx … val_delta=<d> …` | `abs(l.val - r.val) > <d>` |
+| `@assert_join_temporal_approx duration=<iso> …` | `abs(cast(l.val as double) - cast(r.val as double)) > <duration_seconds>` |
+| `@assert_join_lambda (<lambda>) …` | `NOT (<lambda>)(l.val, r.val)` |
+
+> **NULL handling**: for a matched key, two `NULL` values always count as equal, while `NULL` on only one side is always a violation (regardless of comparator/lambda).
+
+Optional row tolerances relax the whole check: `row_delta=<n>` allows up to `n` violating rows; `row_ratio=<r>` allows up to `r × total_rows` violating rows.
+
+#### Row Count Comparison (`df0` vs `df1`)
+
+`@assert_rows_equal` groups each DataFrame by `<fields>` (default `columns(*)`) and requires matching counts:
+
+```sql
+a = SELECT <fields>, count(*) AS c FROM df0 GROUP BY <fields>
+b = SELECT <fields>, count(*) AS c FROM df1 GROUP BY <fields>
+
+-- Passes when this returns 0 rows:
+SELECT *
+FROM a FULL OUTER JOIN b USING (<fields>)
+WHERE a.c IS DISTINCT FROM b.c
+   OR a.<field> IS NULL OR b.<field> IS NULL;
+```
+
+`row_delta` / `row_ratio` tolerances apply as above.
 
 ---
 
@@ -191,9 +279,9 @@ This pipeline is defined in `evaluators/base.py` via `StepwiseAssertionMixin`, a
 
 ### Assertion Types
 
-- **Single-DataFrame**: predicate check (all/any/none), empty/non-empty, uniqueness
-- **Multi-DataFrame Aggregation**: compare aggregated values across multiple queries (supports `*` wildcard)
-- **Dual-DataFrame Join**: join by keys and compare value columns (exact / ratio / delta / temporal)
+- **Single-DataFrame**: predicate check (all/any/none), empty/non-empty, uniqueness, set equality — all applied to `df0`
+- **Dual-DataFrame Aggregation**: aggregate `df0` and `df1` by keys and compare the aggregated values (exact / ratio / delta / temporal)
+- **Dual-DataFrame Join**: join `df0` and `df1` by keys and compare value columns (exact / ratio / delta / temporal / lambda)
 
 ---
 

@@ -96,6 +96,8 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 
 ## 注解参考
 
+> **DataFrame 模型**：一个测试用例可以包含一条或多条 SQL 语句，每条语句产生一个结果 DataFrame（按下文统一记作 `df0`、`df1`、……）。单 DataFrame 断言（`@assert_all`、`@assert_any`、`@assert_none`、`@assert_empty`、`@assert_not_empty`、`@assert_unique`、`@assert_set_equal`）检查**第一个语句的结果 `df0`**；双 DataFrame 断言（`@assert_agg_*`、`@assert_join_*`、`@assert_rows_equal`）比较 **`df0` 与 `df1`**，因此测试中必须恰好包含两条 SQL 语句。详见[断言是怎么执行的（等效 SQL）](#断言是怎么执行的等效-sql)。
+
 | 注解 | 参数 | 说明 |
 | --- | --- | --- |
 | `@test` | `<name>` | 标记一个测试用例的开始 |
@@ -109,15 +111,15 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 | `@assert_not_empty` | — | DataFrame 必须非空 |
 | `@assert_unique` | `<field1>[, <field2>]` | 指定列组合必须唯一 |
 | `@assert_set_equal` | `<col> (<val1>, ...)` | 列的去重值必须与给定集合一致 |
-| `@assert_agg_equal` | `<agg> <fields> [group by <keys>]` | 多组 DataFrame 的聚合结果必须完全一致 |
-| `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields> [group by <keys>]` | 聚合结果近似相等：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
-| `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields> [group by <keys>]` | 聚合结果近似相等：`\|a - b\| <= delta` |
-| `@assert_agg_temporal_approx` | `<agg> <duration> <fields> [group by <keys>]` | 聚合结果近似相等：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
+| `@assert_agg_equal` | `<agg> <fields> [group by <keys>]` | df0 与 df1 的分组聚合结果必须完全一致 |
+| `@assert_agg_numeric_ratio_approx` | `<agg> <ratio> <fields> [group by <keys>]` | df0 与 df1 聚合结果近似相等：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` |
+| `@assert_agg_numeric_delta_approx` | `<agg> <delta> <fields> [group by <keys>]` | df0 与 df1 聚合结果近似相等：`\|a - b\| <= delta` |
+| `@assert_agg_temporal_approx` | `<agg> <duration> <fields> [group by <keys>]` | df0 与 df1 聚合结果近似相等：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
 | `@assert_join_equal` | `[row_delta=<n>] [row_ratio=<r>] [left\|right\|inner\|full] join on <keys> [values <vals>]` | 按 key 连接后，值列必须完全一致 |
 | `@assert_join_numeric_approx` | `[row_delta=<n>] [row_ratio=<r>] [val_ratio=<r>] [val_delta=<d>] [left\|right\|inner\|full] join on <keys> [values <vals>]` | 连接数值近似：`\|a - b\| <= ratio * max(\|a\|, \|b\|)` 和/或 `\|a - b\| <= delta` |
 | `@assert_join_temporal_approx` | `[row_delta=<n>] [row_ratio=<r>] duration=<iso> [left\|right\|inner\|full] join on <keys> [values <vals>]` | 连接时间近似：`\|a - b\| <= duration_seconds`（ISO 8601 格式） |
 | `@assert_join_lambda` | `[row_delta=<n>] [row_ratio=<r>] (<lambda>) [left\|right\|inner\|full] join on <keys> [values <vals>]` | 使用自定义 lambda 比较器进行连接比较 |
-| `@assert_rows_equal` | `[row_delta=<n>] [row_ratio=<r>] [<fields>]` | 按字段分组后，比较各组的行数是否一致（默认 fields: `columns(*)`） |
+| `@assert_rows_equal` | `[row_delta=<n>] [row_ratio=<r>] [<fields>]` | 按字段分组后，比较 df0 与 df1 各组的行数是否一致（默认 fields: `columns(*)`） |
 
 > **说明**：
 >
@@ -144,6 +146,92 @@ anno-sql-test spark --report-type console,xlsx,txt,junitxml ./sql_tests/
 > - 在 SQL 中使用 `${var_name}` 进行替换：`SELECT * FROM ${tbl}`。
 > - 通过 CLI 覆盖变量：`anno-sql-test spark --var db=staging ./sql_tests/`（可重复使用）。
 > - CLI 变量优先级高于文件级变量。
+
+### 断言是怎么执行的（等效 SQL）
+
+下文 `df0` / `df1` 表示一个测试用例中各条 SQL 语句的结果 DataFrame（按语句顺序）。单 DataFrame 断言检查 `df0`；双 DataFrame 断言比较 `df0` 与 `df1`。一个测试用例**只有当所有断言都通过时才视为通过**。
+
+#### 谓词与行数检查（针对 `df0`）
+
+| 断言 | 作用 | 通过条件 |
+| --- | --- | --- |
+| `@assert_all <pred>` | 每一行都必须满足 `<pred>` | `SELECT * FROM df0 WHERE NOT (<pred>)` 返回 0 行 |
+| `@assert_any <pred>` | 至少有一行满足 `<pred>` | `SELECT * FROM df0 WHERE <pred>` 返回 ≥ 1 行 |
+| `@assert_none <pred>` | 没有任何行满足 `<pred>` | `SELECT * FROM df0 WHERE <pred>` 返回 0 行 |
+| `@assert_empty` | `df0` 必须为空 | `SELECT * FROM df0 LIMIT 1` 返回 0 行 |
+| `@assert_not_empty` | `df0` 必须非空 | `SELECT * FROM df0 LIMIT 1` 返回 1 行 |
+
+#### 唯一性与集合检查（针对 `df0`）
+
+| 断言 | 作用 | 通过条件 |
+| --- | --- | --- |
+| `@assert_unique f1, f2` | `(f1, f2)` 组合必须唯一 | `SELECT f1, f2, count(*) c FROM df0 GROUP BY f1, f2 HAVING c > 1` 返回 0 行 |
+| `@assert_set_equal col (v1, v2)` | `col` 列的去重值必须恰好等于 `{v1, v2}` | `SELECT DISTINCT col FROM df0` 既不能缺少集合中的值，也不能包含集合外的值 |
+
+#### 聚合比较（`df0` vs `df1`）
+
+`@assert_agg_*` 会先用相同的分组键和聚合表达式分别对两个 DataFrame 做聚合：
+
+```sql
+a = SELECT <keys>, <agg>(<fields>) AS agg_val FROM df0 GROUP BY <keys>
+b = SELECT <keys>, <agg>(<fields>) AS agg_val FROM df1 GROUP BY <keys>
+```
+
+然后按键做 `FULL OUTER JOIN`。`@assert_agg_equal` 的通过条件等价于下面这条 SQL 返回 0 行：
+
+```sql
+SELECT *
+FROM a FULL OUTER JOIN b USING (<keys>)
+WHERE a.agg_val IS DISTINCT FROM b.agg_val   -- 聚合值不一致
+   OR a.<key> IS NULL OR b.<key> IS NULL;    -- 键只出现在一侧
+```
+
+近似版本写法相同，只是把值比较条件替换为下面的"违规"判定：
+
+| 断言 | 值比较条件（满足即为违规行） |
+| --- | --- |
+| `@assert_agg_numeric_ratio_approx <agg> <ratio> …` | `abs(a.agg_val - b.agg_val) > <ratio> * greatest(abs(a.agg_val), abs(b.agg_val))` |
+| `@assert_agg_numeric_delta_approx <agg> <delta> …` | `abs(a.agg_val - b.agg_val) > <delta>` |
+| `@assert_agg_temporal_approx <agg> <duration> …` | `abs(a.agg_val - b.agg_val) > <duration_seconds>` |
+
+#### 连接比较（`df0` vs `df1`）
+
+`@assert_join_*` 直接按键连接两个 DataFrame，不做聚合。`@assert_join_equal` 的通过条件等价于下面这条 SQL 返回 0 行：
+
+```sql
+SELECT *
+FROM df0 l FULL OUTER JOIN df1 r ON l.<key> = r.<key>  -- 默认 full，也可为 left / right / inner
+WHERE l.<val> IS DISTINCT FROM r.<val>                 -- 值不一致
+   OR l.<key> IS NULL OR r.<key> IS NULL;              -- 键只出现在一侧
+```
+
+| 断言 | 值比较条件（满足即为违规行） |
+| --- | --- |
+| `@assert_join_numeric_approx … val_ratio=<r> …` | `abs(l.val - r.val) > <r> * greatest(abs(l.val), abs(r.val))` |
+| `@assert_join_numeric_approx … val_delta=<d> …` | `abs(l.val - r.val) > <d>` |
+| `@assert_join_temporal_approx duration=<iso> …` | `abs(cast(l.val as double) - cast(r.val as double)) > <duration_seconds>` |
+| `@assert_join_lambda (<lambda>) …` | `NOT (<lambda>)(l.val, r.val)` |
+
+> **NULL 处理**：对于匹配到的 key，两侧值都为 `NULL` 时始终视为相等；仅一侧为 `NULL` 时始终视为违规（无论使用何种比较器 / lambda）。
+
+可选的行容差参数可以放宽整条检查：`row_delta=<n>` 允许最多 `n` 行违规；`row_ratio=<r>` 允许最多 `r × 总行数` 行违规。
+
+#### 行数比较（`df0` vs `df1`）
+
+`@assert_rows_equal` 按 `<fields>`（默认为 `columns(*)`）分别对两个 DataFrame 分组统计行数，并要求各组行数一致：
+
+```sql
+a = SELECT <fields>, count(*) AS c FROM df0 GROUP BY <fields>
+b = SELECT <fields>, count(*) AS c FROM df1 GROUP BY <fields>
+
+-- 等价于下面这条 SQL 返回 0 行：
+SELECT *
+FROM a FULL OUTER JOIN b USING (<fields>)
+WHERE a.c IS DISTINCT FROM b.c
+   OR a.<field> IS NULL OR b.<field> IS NULL;
+```
+
+同样支持 `row_delta` / `row_ratio` 容差。
 
 ---
 
@@ -190,9 +278,9 @@ src/anno_sql_test/
 
 ### 断言类型
 
-- **单 DataFrame 断言**：谓词检查（全部/任意/无）、空/非空、唯一性
-- **多 DataFrame 聚合断言**：对多个查询结果的聚合值进行比较（支持 `*` 通配）
-- **双 DataFrame 连接断言**：按 key 连接后比较值列（精确 / 比例 / 绝对值 / 时间）
+- **单 DataFrame 断言**：谓词检查（全部/任意/无）、空/非空、唯一性、集合相等——均作用于 `df0`
+- **双 DataFrame 聚合断言**：将 `df0` 与 `df1` 按键聚合后比较聚合值（精确 / 比例 / 绝对值 / 时间）
+- **双 DataFrame 连接断言**：将 `df0` 与 `df1` 按键连接后比较值列（精确 / 比例 / 绝对值 / 时间 / lambda）
 
 ---
 
